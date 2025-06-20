@@ -12,22 +12,33 @@ interface Message {
   content: string;
   sender: "user" | "ai";
   timestamp: Date;
-  typing?: boolean;
+  typing?: false;
 }
 
-const ChatInterface = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      content: "Hey there! 👋 I'm your personal talent agent, and I'm so excited to work with you today! I've been looking over your profile and I have some fantastic opportunities lined up. What's on your mind? Need help finding the perfect audition, or maybe you want to strategize about your next career move?",
-      sender: "ai",
-      timestamp: new Date()
-    }
-  ]);
+const ChatInterface = ({ demoUserChat }: { demoUserChat: Message[] }) => {
   const [inputMessage, setInputMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(aiChatService.hasApiKey());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const initialMsg: Message = {
+    id: 12,
+    content:
+      "Hey there! 👋 I'm your personal talent agent, and I'm so excited to work with you today! I've been looking over your profile and I have some fantastic opportunities lined up. What's on your mind? Need help finding the perfect audition, or maybe you want to strategize about your next career move?",
+    sender: "ai",
+    timestamp: new Date(),
+  };
+
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  // Load messages when demoUserChat changes:
+  useEffect(() => {
+    if (demoUserChat?.length > 0) {
+      setMessages([...demoUserChat, initialMsg]);
+    } else {
+      setMessages([initialMsg]);
+    }
+  }, [demoUserChat]);
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {

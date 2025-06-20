@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
@@ -18,6 +18,8 @@ const Dashboard = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const location = useLocation();
+  const demoUserChat = location.state?.demoUserChat;
   
   const [activeTab, setActiveTab] = useState("overview");
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -29,6 +31,10 @@ const Dashboard = () => {
   ]);
   const [userRole, setUserRole] = useState<string>('basic_user');
   const [isCourseProvider, setIsCourseProvider] = useState(false);
+  const [chatHistory, setChatHistory] = useState<
+    { id: Number, content: string, sender: "user" | "ai", timestamp: Date;}[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
 
   // Check for onboarding data if no user is logged in
   useEffect(() => {
@@ -115,6 +121,40 @@ const Dashboard = () => {
       fetchProfile();
     }
   }, [user, toast]);
+
+  // Fetch chat history for authenticated user
+  useEffect(() => {
+    const fetchChatHistory = async () => {
+      if (!user?.email) return;
+    
+      setChatLoading(true);
+    
+      try {
+        const { data, error } = await supabase
+          .from('chat_histories')
+          .select('chat_history')
+          .eq('user_email', user.email)
+          .maybeSingle();
+      
+        if (error) {
+          console.error('Error fetching chat history:', error);
+        } else if (data?.chat_history) {
+          setChatHistory(data.chat_history);
+        } else {
+          setChatHistory([]);
+        }
+      } catch (error) {
+        console.error('Error fetching chat history:', error);
+      } finally {
+        setChatLoading(false);
+      }
+    };
+  
+    if (user?.email) {
+      fetchChatHistory();
+    }
+  }, [user?.email]);
+
 
   const checkUserRole = async () => {
     if (user) {
@@ -339,6 +379,19 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* {demoUserChat?.chat_history ? (
+          <div>
+            {demoUserChat.chat_history.map((msg, index) => (
+              <div key={index} style={{ marginBottom: '8px' }}>
+                <strong>{msg.sender}:</strong> {msg.content} <br />
+                <small>{new Date(msg.timestamp).toLocaleString()}</small>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>Loading chat...</div>
+        )} */}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <ProfileOverview displayProfile={displayProfile} />
           <AIInsights displayProfile={displayProfile} />
@@ -354,6 +407,7 @@ const Dashboard = () => {
           upcomingAuditions={upcomingAuditions}
           userRole={userRole}
           isPremiumUser={isPremiumUser}
+          demoUserChat={demoUserChat.chat_history}
         />
       </div>
     </div>

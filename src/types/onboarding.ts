@@ -1,3 +1,7 @@
+export interface ChatHistory {
+  user_email: string;
+  chat_history: Message[];
+}
 
 export interface Message {
   id: number;

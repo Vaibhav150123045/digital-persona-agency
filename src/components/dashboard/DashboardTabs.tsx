@@ -5,6 +5,8 @@ import { Users, Briefcase, MessageCircle, Calendar, FileText, Trello, Search, Bo
 import OpportunitiesTab from "./OpportunitiesTab";
 import ApiIntegrationsManager from "./ApiIntegrationsManager";
 import FeatureLockedCard from "./FeatureLockedCard";
+import ChatInterface from "./ChatInterface";
+import { Message } from "@/types/onboarding";
 
 interface DashboardTabsProps {
   activeTab: string;
@@ -16,6 +18,7 @@ interface DashboardTabsProps {
   upcomingAuditions: any[];
   userRole: string;
   isPremiumUser: boolean;
+  demoUserChat: Message[]
 }
 
 const DashboardTabs = ({ 
@@ -27,7 +30,8 @@ const DashboardTabs = ({
   recentActivity, 
   upcomingAuditions,
   userRole,
-  isPremiumUser
+  isPremiumUser,
+  demoUserChat
 }: DashboardTabsProps) => {
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
@@ -120,11 +124,9 @@ const DashboardTabs = ({
       </TabsContent>
 
       <TabsContent value="chat" className="space-y-6">
-        {isFeatureLocked ? (
-          <FeatureLockedCard onUnlock={onShowLockedFeature} />
-        ) : (
-          <div>AI Chat Content</div>
-        )}
+        
+        <ChatInterface demoUserChat={demoUserChat}/>
+
       </TabsContent>
 
       <TabsContent value="calendar" className="space-y-6">

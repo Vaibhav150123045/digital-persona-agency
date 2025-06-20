@@ -655,6 +655,38 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_histories: {
+        Row: {
+          user_email: string
+          chat_history: {
+            id: number;
+            content: string;
+            sender: "user" | "ai";
+            timestamp: Date;
+          }[]
+          updated_at: string
+        }
+        Insert: {
+          user_email: string
+          chat_history: {
+            id: number;
+            content: string;
+            sender: "user" | "ai";
+            timestamp: Date;
+          }[]
+          updated_at?: string
+        }
+        Update: {
+          chat_history: {
+            id: number;
+            content: string;
+            sender: "user" | "ai";
+            timestamp: Date;
+          }[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

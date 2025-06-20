@@ -165,8 +165,16 @@ const Onboarding = () => {
     sendMessage("I'll skip uploading a picture for now");
   };
 
-  const handleContinue = () => {
-    navigate("/dashboard");
+  const handleContinue = async () => {
+    const demoUserChat = {
+      user_email: onboardingData.email,
+      chat_history: messages,
+      updated_at: new Date().toISOString()
+    }
+    await supabase.from('chat_histories').insert([
+      demoUserChat
+    ])
+    navigate("/dashboard", { state: { demoUserChat: demoUserChat }});
   };
 
   return (
