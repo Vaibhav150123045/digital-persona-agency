@@ -1,3 +1,4 @@
+import { castingService } from "./castingService";
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -35,6 +36,24 @@ export class AIChatService {
     }
 
     try {
+      // 1️⃣ Fetch opportunities
+      const opportunitiesData = await castingService.getCastingOpportunities({ limit: 50 });
+      console.log('Loaded opportunities:', opportunitiesData.length);
+
+      // 2️⃣ Filter out already submitted ones
+      const submissionsData = await castingService.getUserSubmissions();
+      const submittedOpportunityIds = new Set(submissionsData.map(s => s.opportunity_id));
+      const availableOpportunities = opportunitiesData.filter(opp => 
+        !submittedOpportunityIds.has(opp.id)
+      );
+    
+      // 3️⃣ Build opportunities text (limit to top 20)
+      const limitedOpportunities = availableOpportunities.slice(0, 20);
+      const opportunityList = limitedOpportunities.map(opp => 
+        `- ${opp.title} (${opp.location}, ${opp.created_at})`
+      ).join('\n');
+
+
       const systemPrompt: ChatMessage = {
         role: 'system',
         content: `You are an enthusiastic and supportive talent agent with specialist knowledge of the acting industry in London and Los Angelese. You help actors and performers with:
@@ -44,7 +63,12 @@ export class AIChatService {
         - Audition preparation and feedback
         - Professional development
 
-        Always be encouraging, personable, and professional. Use emojis occasionally to show personality. Keep responses conversational but informative - no long paragraphs. Be genuinely invested in their success.`
+        Always be encouraging, personable, and professional. Use emojis occasionally to show personality. Keep responses conversational but informative - no long paragraphs. Be genuinely invested in their success.
+        Here is a list of current audition opportunities available to the user:
+
+        ${opportunityList}
+
+        Always suggest the most relevant ones when asked! 🎭`
       };
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
