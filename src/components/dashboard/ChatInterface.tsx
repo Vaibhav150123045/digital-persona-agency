@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageSquare, Send, User, Sparkles, Heart, Coffee } from "lucide-react";
 import { aiChatService } from "@/services/aiChatService";
 import ApiKeyInput from "./ApiKeyInput";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
   id: number;
@@ -15,30 +16,35 @@ interface Message {
   typing?: false;
 }
 
-const ChatInterface = ({ demoUserChat }: { demoUserChat: Message[] }) => {
+const ChatInterface = ({ olderChat, onChatUpdate }: { olderChat: Message[], onChatUpdate: (messages: Message[]) => void }) => {
   const [inputMessage, setInputMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(aiChatService.hasApiKey());
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const initialMsg: Message = {
-    id: 12,
-    content:
-      "Hey there! 👋 I'm your personal talent agent, and I'm so excited to work with you today! I've been looking over your profile and I have some fantastic opportunities lined up. What's on your mind? Need help finding the perfect audition, or maybe you want to strategize about your next career move?",
-    sender: "ai",
-    timestamp: new Date(),
-  };
-
   const [messages, setMessages] = useState<Message[]>([]);
 
-  // Load messages when demoUserChat changes:
+  // Load messages when olderChat changes:
   useEffect(() => {
-    if (demoUserChat?.length > 0) {
-      setMessages([...demoUserChat, initialMsg]);
+    // Find the max ID in olderChat (if any), otherwise 0
+    const lastId = olderChat?.length > 0
+      ? Math.max(...olderChat.map(msg => msg.id))
+      : 0;
+  
+    // Create initial message with next ID
+    const initialMsg: Message = {
+      id: lastId + 1,
+      content:
+        "Hey there! 👋 I'm your personal talent agent, and I'm so excited to work with you today! I've been looking over your profile and I have some fantastic opportunities lined up. What's on your mind? Need help finding the perfect audition, or maybe you want to strategize about your next career move?",
+      sender: "ai",
+      timestamp: new Date(),
+    };
+  
+    if (olderChat?.length > 0) {
+      setMessages([...olderChat, initialMsg]);
     } else {
       setMessages([initialMsg]);
     }
-  }, [demoUserChat]);
+  }, [olderChat]);
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -51,54 +57,66 @@ const ChatInterface = ({ demoUserChat }: { demoUserChat: Message[] }) => {
 
   const sendMessage = async () => {
     if (!inputMessage.trim()) return;
-
+  
     const userMessage: Message = {
       id: messages.length + 1,
       content: inputMessage,
       sender: "user",
       timestamp: new Date()
     };
-
+  
+    // Update local state with new user message
     setMessages(prev => [...prev, userMessage]);
+    
     const currentInput = inputMessage;
     setInputMessage("");
     setIsTyping(true);
-
+  
     try {
-      // Convert messages to the format expected by the AI service
-      const chatHistory = messages
+      // Prepare chat history for AI (exclude typing indicators)
+      const chatHistory = [...messages, userMessage]
         .filter(msg => !msg.typing)
         .map(msg => ({
           role: msg.sender === "user" ? "user" as const : "assistant" as const,
           content: msg.content
         }));
-
-      // Add the current user message
-      chatHistory.push({
-        role: "user" as const,
-        content: currentInput
-      });
-
+  
       // Get AI response
       const response = await aiChatService.sendMessage(chatHistory);
-      
-      setIsTyping(false);
+  
       const aiResponse: Message = {
-        id: messages.length + 2,
+        id: messages.length + 2, // or you could do [...messages, userMessage].length + 1
         content: response.message,
         sender: "ai",
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, aiResponse]);
-    } catch (error) {
+  
+      // Update local state with AI response
+      setMessages(prev => {
+        const newMessages = [...prev, aiResponse];
+        
+        // After state updated, also update DB
+        onChatUpdate([...newMessages]);
+  
+        return newMessages;
+      });
+  
       setIsTyping(false);
+    } catch (error) {
       const errorResponse: Message = {
         id: messages.length + 2,
         content: "I'm sorry, I'm having trouble responding right now. Please try again in a moment! 😊",
         sender: "ai",
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, errorResponse]);
+  
+      setMessages(prev => {
+        const newMessages = [...prev, errorResponse];
+        onChatUpdate([...newMessages]);
+        return newMessages;
+      });
+  
+      setIsTyping(false);
     }
   };
 
@@ -178,7 +196,7 @@ const ChatInterface = ({ demoUserChat }: { demoUserChat: Message[] }) => {
                             <div className="flex-1">
                               <p className="text-sm leading-relaxed">{message.content}</p>
                               <p className="text-xs opacity-70 mt-2">
-                                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </p>
                             </div>
                             {message.sender === "user" && (

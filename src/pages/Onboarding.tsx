@@ -166,15 +166,15 @@ const Onboarding = () => {
   };
 
   const handleContinue = async () => {
-    const demoUserChat = {
+    const oboardingUserChat = {
       user_email: onboardingData.email,
       chat_history: messages,
       updated_at: new Date().toISOString()
     }
     await supabase.from('chat_histories').insert([
-      demoUserChat
+      oboardingUserChat
     ])
-    navigate("/dashboard", { state: { demoUserChat: demoUserChat }});
+    navigate("/dashboard");
   };
 
   return (

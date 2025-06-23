@@ -13,13 +13,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Shield } from "lucide-react";
 import { BookOpen } from "lucide-react";
+import { Message } from "@/types/onboarding";
 
 const Dashboard = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const location = useLocation();
-  const demoUserChat = location.state?.demoUserChat;
   
   const [activeTab, setActiveTab] = useState("overview");
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -32,7 +31,7 @@ const Dashboard = () => {
   const [userRole, setUserRole] = useState<string>('basic_user');
   const [isCourseProvider, setIsCourseProvider] = useState(false);
   const [chatHistory, setChatHistory] = useState<
-    { id: Number, content: string, sender: "user" | "ai", timestamp: Date;}[]>([]);
+    { id: number, content: string, sender: "user" | "ai", timestamp: Date;}[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
 
 
@@ -248,6 +247,20 @@ const Dashboard = () => {
     }
   };
 
+  const handleChatUpdate = async (updatedMessages: Message[]) => {
+    if (!userProfile?.email) return;
+  
+    const chatRecord = {
+      user_email: userProfile.email,
+      chat_history: updatedMessages,
+      updated_at: new Date().toISOString()
+    };
+  
+    await supabase
+      .from("chat_histories")
+      .upsert([chatRecord], { onConflict: "user_email" });
+  };
+
   if (loading || profileLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -379,19 +392,6 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* {demoUserChat?.chat_history ? (
-          <div>
-            {demoUserChat.chat_history.map((msg, index) => (
-              <div key={index} style={{ marginBottom: '8px' }}>
-                <strong>{msg.sender}:</strong> {msg.content} <br />
-                <small>{new Date(msg.timestamp).toLocaleString()}</small>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div>Loading chat...</div>
-        )} */}
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <ProfileOverview displayProfile={displayProfile} />
           <AIInsights displayProfile={displayProfile} />
@@ -407,7 +407,8 @@ const Dashboard = () => {
           upcomingAuditions={upcomingAuditions}
           userRole={userRole}
           isPremiumUser={isPremiumUser}
-          demoUserChat={demoUserChat.chat_history}
+          chatHistory={chatHistory}
+          onChatUpdate={handleChatUpdate}
         />
       </div>
     </div>

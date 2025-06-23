@@ -18,7 +18,8 @@ interface DashboardTabsProps {
   upcomingAuditions: any[];
   userRole: string;
   isPremiumUser: boolean;
-  demoUserChat: Message[]
+  chatHistory: Message[];
+  onChatUpdate: (messages: Message[]) => void;
 }
 
 const DashboardTabs = ({ 
@@ -31,7 +32,8 @@ const DashboardTabs = ({
   upcomingAuditions,
   userRole,
   isPremiumUser,
-  demoUserChat
+  chatHistory,
+  onChatUpdate
 }: DashboardTabsProps) => {
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
@@ -124,9 +126,11 @@ const DashboardTabs = ({
       </TabsContent>
 
       <TabsContent value="chat" className="space-y-6">
-        
-        <ChatInterface demoUserChat={demoUserChat}/>
-
+        {isFeatureLocked ? (
+          <FeatureLockedCard onUnlock={onShowLockedFeature} />
+        ) : (
+          <ChatInterface olderChat={chatHistory} onChatUpdate={onChatUpdate}/>
+        )}
       </TabsContent>
 
       <TabsContent value="calendar" className="space-y-6">
