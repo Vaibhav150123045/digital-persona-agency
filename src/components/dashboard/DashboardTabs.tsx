@@ -126,11 +126,7 @@ const DashboardTabs = ({
       </TabsContent>
 
       <TabsContent value="chat" className="space-y-6">
-        {isFeatureLocked ? (
-          <FeatureLockedCard onUnlock={onShowLockedFeature} />
-        ) : (
-          <ChatInterface olderChat={chatHistory} onChatUpdate={onChatUpdate}/>
-        )}
+        <ChatInterface olderChat={chatHistory} onChatUpdate={onChatUpdate}/>
       </TabsContent>
 
       <TabsContent value="calendar" className="space-y-6">

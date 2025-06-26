@@ -16,35 +16,21 @@ interface Message {
   typing?: false;
 }
 
+const hasChattedToday = (messages: Message[]) => {
+  const today = new Date().toDateString();
+  return (
+    messages.length > 12 && 
+    messages.some(msg => new Date(msg.timestamp).toDateString() === today)
+  );
+};
+
 const ChatInterface = ({ olderChat, onChatUpdate }: { olderChat: Message[], onChatUpdate: (messages: Message[]) => void }) => {
   const [inputMessage, setInputMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(aiChatService.hasApiKey());
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  // Load messages when olderChat changes:
-  useEffect(() => {
-    // Find the max ID in olderChat (if any), otherwise 0
-    const lastId = olderChat?.length > 0
-      ? Math.max(...olderChat.map(msg => msg.id))
-      : 0;
-  
-    // Create initial message with next ID
-    const initialMsg: Message = {
-      id: lastId + 1,
-      content:
-        "Hey there! 👋 I'm your personal talent agent, and I'm so excited to work with you today! I've been looking over your profile and I have some fantastic opportunities lined up. What's on your mind? Need help finding the perfect audition, or maybe you want to strategize about your next career move?",
-      sender: "ai",
-      timestamp: new Date(),
-    };
-  
-    if (olderChat?.length > 0) {
-      setMessages([...olderChat, initialMsg]);
-    } else {
-      setMessages([initialMsg]);
-    }
-  }, [olderChat]);
+  const [messages, setMessages] = useState<Message[]>(olderChat);
+  const [chatLocked, setChatLocked] = useState(() => hasChattedToday(olderChat));
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -56,7 +42,7 @@ const ChatInterface = ({ olderChat, onChatUpdate }: { olderChat: Message[], onCh
   }, [messages, isTyping]);
 
   const sendMessage = async () => {
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() || chatLocked) return; // ✅ Don't allow if locked
   
     const userMessage: Message = {
       id: messages.length + 1,
@@ -94,10 +80,8 @@ const ChatInterface = ({ olderChat, onChatUpdate }: { olderChat: Message[], onCh
       // Update local state with AI response
       setMessages(prev => {
         const newMessages = [...prev, aiResponse];
-        
-        // After state updated, also update DB
+        setChatLocked(hasChattedToday(newMessages));
         onChatUpdate([...newMessages]);
-  
         return newMessages;
       });
   
@@ -238,20 +222,20 @@ const ChatInterface = ({ olderChat, onChatUpdate }: { olderChat: Message[], onCh
               <div className="space-y-4">
                 <div className="flex space-x-3">
                   <div className="flex-1 relative">
-                    <Input
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder="Ask me anything... I'm here to help! 💪"
-                      className="bg-gray-800 border-gray-600 text-white placeholder-gray-400 rounded-xl pr-12 h-12"
-                      onKeyPress={(e) => e.key === "Enter" && sendMessage()}
-                    />
-                    <Button 
-                      onClick={sendMessage} 
-                      className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 rounded-lg h-8 w-8 p-0"
-                      disabled={isTyping}
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
+                  <Input
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    placeholder={chatLocked ? "You've reached your chat limit for today 💬" : "Ask me anything... I'm here to help! 💪"}
+                    disabled={chatLocked}
+                    className="bg-gray-800 border-gray-600 text-white placeholder-gray-400 rounded-xl pr-12 h-12"
+                  />
+                  <Button 
+                    onClick={sendMessage} 
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 rounded-lg h-8 w-8 p-0"
+                    disabled={isTyping || chatLocked} // ✅ Block sending
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
                   </div>
                 </div>
 

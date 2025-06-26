@@ -123,36 +123,32 @@ const Dashboard = () => {
 
   // Fetch chat history for authenticated user
   useEffect(() => {
+    const userEmail = onboardingData?.email || user?.email;
+    if (!userEmail) return;
+  
     const fetchChatHistory = async () => {
-      if (!user?.email) return;
-    
       setChatLoading(true);
-    
       try {
         const { data, error } = await supabase
           .from('chat_histories')
           .select('chat_history')
-          .eq('user_email', user.email)
+          .eq('user_email', userEmail)
           .maybeSingle();
-      
+  
         if (error) {
           console.error('Error fetching chat history:', error);
-        } else if (data?.chat_history) {
-          setChatHistory(data.chat_history);
         } else {
-          setChatHistory([]);
+          setChatHistory(data?.chat_history ?? []);
         }
-      } catch (error) {
-        console.error('Error fetching chat history:', error);
+      } catch (err) {
+        console.error('Fetch error', err);
       } finally {
         setChatLoading(false);
       }
     };
   
-    if (user?.email) {
-      fetchChatHistory();
-    }
-  }, [user?.email]);
+    fetchChatHistory();
+  }, [onboardingData?.email, user?.email, activeTab]); 
 
 
   const checkUserRole = async () => {
@@ -240,7 +236,7 @@ const Dashboard = () => {
     // Admin has access to everything
     if (isAdmin) return;
     
-    const lockedTabs = ["opportunities", "chat", "calendar", "assets", "kanban", "search", "courses", "referrals"];
+    const lockedTabs = ["opportunities", "calendar", "assets", "kanban", "search", "courses", "referrals"];
     if (lockedTabs.includes(value) && isFeatureLocked(user, userProfile)) {
       showLockedFeature();
       return;
@@ -248,10 +244,11 @@ const Dashboard = () => {
   };
 
   const handleChatUpdate = async (updatedMessages: Message[]) => {
-    if (!userProfile?.email) return;
+    const userEmail = onboardingData?.email || user?.email;
+    if (!userEmail) return;
   
     const chatRecord = {
-      user_email: userProfile.email,
+      user_email: userEmail,
       chat_history: updatedMessages,
       updated_at: new Date().toISOString()
     };
