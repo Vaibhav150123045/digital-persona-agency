@@ -19,7 +19,7 @@ const Onboarding = () => {
     {
       id: 1,
       content: "Welcome to spais Agency! 🎭 I'm so excited to meet you and help kickstart your acting career! I'm your personal AI agent, and I'll be working with you every step of the way. Let's get to know each other better! What's your name?",
-      sender: "ai",
+      sender: "onboard bot",
       timestamp: new Date()
     }
   ]);
@@ -109,7 +109,7 @@ const Onboarding = () => {
           const aiResponse: Message = {
             id: messages.length + 2,
             content: nextQuestion.question.replace("{name}", newData.name),
-            sender: "ai",
+            sender: "onboard bot",
             timestamp: new Date()
           };
           setMessages(prev => [...prev, aiResponse]);
@@ -120,7 +120,7 @@ const Onboarding = () => {
         const finalResponse: Message = {
           id: messages.length + 2,
           content: `Perfect, ${newData.name}! 🌟 I have everything I need to get started. You're all set up and ready to dive into the amazing world of opportunities waiting for you. Click continue when you're ready to explore your personalized dashboard!`,
-          sender: "ai",
+          sender: "onboard bot",
           timestamp: new Date()
         };
         setMessages(prev => [...prev, finalResponse]);

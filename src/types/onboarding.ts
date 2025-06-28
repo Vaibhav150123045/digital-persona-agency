@@ -6,7 +6,7 @@ export interface ChatHistory {
 export interface Message {
   id: number;
   content: string;
-  sender: "user" | "ai";
+  sender: "user" | "ai" | "onboard bot";
   timestamp: Date;
 }
 

@@ -19,8 +19,11 @@ interface Message {
 const hasChattedToday = (messages: Message[]) => {
   const today = new Date().toDateString();
   return (
-    messages.length > 12 && 
-    messages.some(msg => new Date(msg.timestamp).toDateString() === today)
+    messages.some(
+      msg =>
+        new Date(msg.timestamp).toDateString() === today &&
+        msg.sender === "ai"
+    )
   );
 };
 
