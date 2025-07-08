@@ -231,9 +231,9 @@ serve(async (req) => {
         };
 
         const { data: insertResult, error: insertError } = await supabase
-          .from('casting_opportunities')
-          .insert(insertData)
-          .select('id, title');
+        .from('casting_opportunities')
+        .upsert(insertData, { onConflict: ['external_url'] }) // prevent duplicates
+        .select('id, title');
 
         if (insertError) {
           console.error(`❌ DB Insert Error:`, insertError);
