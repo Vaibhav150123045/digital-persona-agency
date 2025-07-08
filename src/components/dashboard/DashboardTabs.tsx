@@ -1,39 +1,36 @@
-
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Briefcase, MessageCircle, Calendar, FileText, Trello, Search, BookOpen, Gift, Zap } from "lucide-react";
-import OpportunitiesTab from "./OpportunitiesTab";
-import ApiIntegrationsManager from "./ApiIntegrationsManager";
+import { Users, Briefcase, MessageCircle, FileText, Search, BookOpen, Gift, Settings } from "lucide-react";
+import EnhancedOpportunitiesTab from "./EnhancedOpportunitiesTab";
 import FeatureLockedCard from "./FeatureLockedCard";
 import ChatInterface from "./ChatInterface";
-import { Message } from "@/types/onboarding";
+import AgentConfigurationPanel from "./AgentConfigurationPanel";
+import EnhancedAIAgentPanel from "./EnhancedAIAgentPanel";
 
 interface DashboardTabsProps {
   activeTab: string;
   onTabChange: (value: string) => void;
   isFeatureLocked: boolean;
+  isChatLocked: boolean;
   onShowLockedFeature: () => void;
   displayProfile: any;
   recentActivity: any[];
   upcomingAuditions: any[];
   userRole: string;
   isPremiumUser: boolean;
-  chatHistory: Message[];
-  onChatUpdate: (messages: Message[]) => void;
 }
 
 const DashboardTabs = ({ 
   activeTab, 
   onTabChange, 
   isFeatureLocked, 
+  isChatLocked,
   onShowLockedFeature, 
   displayProfile, 
   recentActivity, 
   upcomingAuditions,
   userRole,
-  isPremiumUser,
-  chatHistory,
-  onChatUpdate
+  isPremiumUser
 }: DashboardTabsProps) => {
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
@@ -46,25 +43,17 @@ const DashboardTabs = ({
           <Briefcase className="h-4 w-4 mr-2" />
           Opportunities
         </TabsTrigger>
-        <TabsTrigger value="integrations" className="data-[state=active]:bg-white/10">
-          <Zap className="h-4 w-4 mr-2" />
-          API Integrations
-        </TabsTrigger>
         <TabsTrigger value="chat" className="data-[state=active]:bg-white/10">
           <MessageCircle className="h-4 w-4 mr-2" />
           AI Chat
         </TabsTrigger>
-        <TabsTrigger value="calendar" className="data-[state=active]:bg-white/10">
-          <Calendar className="h-4 w-4 mr-2" />
-          Calendar
+        <TabsTrigger value="agent" className="data-[state=active]:bg-white/10">
+          <Settings className="h-4 w-4 mr-2" />
+          AI Agent
         </TabsTrigger>
         <TabsTrigger value="assets" className="data-[state=active]:bg-white/10">
           <FileText className="h-4 w-4 mr-2" />
           Assets
-        </TabsTrigger>
-        <TabsTrigger value="kanban" className="data-[state=active]:bg-white/10">
-          <Trello className="h-4 w-4 mr-2" />
-          Pipeline
         </TabsTrigger>
         <TabsTrigger value="search" className="data-[state=active]:bg-white/10">
           <Search className="h-4 w-4 mr-2" />
@@ -114,26 +103,29 @@ const DashboardTabs = ({
       </TabsContent>
 
       <TabsContent value="opportunities" className="space-y-6">
-        <OpportunitiesTab />
-      </TabsContent>
-
-      <TabsContent value="integrations" className="space-y-6">
         {isFeatureLocked ? (
           <FeatureLockedCard onUnlock={onShowLockedFeature} />
         ) : (
-          <ApiIntegrationsManager />
+          <EnhancedOpportunitiesTab />
         )}
       </TabsContent>
 
       <TabsContent value="chat" className="space-y-6">
-        <ChatInterface olderChat={chatHistory} onChatUpdate={onChatUpdate}/>
+        {isChatLocked ? (
+          <FeatureLockedCard onUnlock={onShowLockedFeature} />
+        ) : (
+          <ChatInterface userProfile={displayProfile} />
+        )}
       </TabsContent>
 
-      <TabsContent value="calendar" className="space-y-6">
+      <TabsContent value="agent" className="space-y-6">
         {isFeatureLocked ? (
           <FeatureLockedCard onUnlock={onShowLockedFeature} />
         ) : (
-          <div>Calendar Content</div>
+          <div className="space-y-8">
+            <EnhancedAIAgentPanel />
+            <AgentConfigurationPanel />
+          </div>
         )}
       </TabsContent>
 
@@ -142,14 +134,6 @@ const DashboardTabs = ({
           <FeatureLockedCard onUnlock={onShowLockedFeature} />
         ) : (
           <div>Assets Content</div>
-        )}
-      </TabsContent>
-
-      <TabsContent value="kanban" className="space-y-6">
-        {isFeatureLocked ? (
-          <FeatureLockedCard onUnlock={onShowLockedFeature} />
-        ) : (
-          <div>Kanban Content</div>
         )}
       </TabsContent>
 

@@ -1,4 +1,5 @@
-import { castingService } from "./castingService";
+
+import { supabase } from "@/integrations/supabase/client";
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -8,94 +9,104 @@ interface ChatMessage {
 interface AIResponse {
   message: string;
   error?: string;
+  limitExceeded?: boolean;
+  usage?: {
+    messagesUsed: number;
+    tokensUsed: number;
+    messagesLimit: number | string;
+    tokensLimit: number | string;
+    tier: string;
+  };
 }
 
 export class AIChatService {
-  private apiKey: string | null = null;
-
   constructor() {
-    // For now, we'll use localStorage for the API key
-    this.apiKey = localStorage.getItem('openai_api_key');
-  }
-
-  setApiKey(key: string) {
-    this.apiKey = key;
-    localStorage.setItem('openai_api_key', key);
+    // No longer need to manage API keys on the frontend
   }
 
   hasApiKey(): boolean {
-    return !!this.apiKey;
+    // Always return true since we handle API keys on the backend
+    return true;
   }
 
-  async sendMessage(messages: ChatMessage[]): Promise<AIResponse> {
-    if (!this.apiKey) {
-      return {
-        message: "I'd love to help, but I need an OpenAI API key to provide intelligent responses. Please add your API key in the settings!",
-        error: "No API key configured"
-      };
-    }
+  setApiKey(key: string) {
+    // No-op since we don't need frontend API keys anymore
+    console.log('API key management is now handled server-side');
+  }
 
+  async getCurrentUsage(): Promise<any> {
     try {
-      // 1️⃣ Fetch opportunities
-      const opportunitiesData = await castingService.getCastingOpportunities({ limit: 50 });
-      console.log('Loaded opportunities:', opportunitiesData.length);
+      const { data: { user } } = await supabase.auth.getUser();
+      const today = new Date().toISOString().split('T')[0];
+      
+      console.log('Fetching usage for user:', user?.email, 'date:', today);
+      
+      // Query specifically for the current authenticated user's usage
+      const { data, error } = await supabase
+        .from('daily_chat_usage')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('date', today)
+        .maybeSingle();
 
-      // 2️⃣ Filter out already submitted ones
-      const submissionsData = await castingService.getUserSubmissions();
-      const submittedOpportunityIds = new Set(submissionsData.map(s => s.opportunity_id));
-      const availableOpportunities = opportunitiesData.filter(opp => 
-        !submittedOpportunityIds.has(opp.id)
-      );
-    
-      // 3️⃣ Build opportunities text (limit to top 20)
-      const limitedOpportunities = availableOpportunities.slice(0, 20);
-      const opportunityList = limitedOpportunities.map(opp => 
-        `- ${opp.title} (${opp.location}, ${opp.created_at})`
-      ).join('\n');
-
-
-      const systemPrompt: ChatMessage = {
-        role: 'system',
-        content: `You are an enthusiastic and supportive talent agent with specialist knowledge of the acting industry in London and Los Angelese. You help actors and performers with:
-        - Finding auditions and opportunities
-        - Career advice and strategy
-        - Industry insights and trends
-        - Audition preparation and feedback
-        - Professional development
-
-        Always be encouraging, personable, and professional. Use emojis occasionally to show personality. Keep responses conversational but informative - no long paragraphs. Be genuinely invested in their success.
-        Here is a list of current audition opportunities available to the user:
-
-        ${opportunityList}
-
-        Always suggest the most relevant ones when asked! 🎭`
-      };
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [systemPrompt, ...messages],
-          max_tokens: 500,
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'API request failed');
+      if (error) {
+        console.error('Error fetching usage:', error);
+        return { messages_used: 0, tokens_used: 0 };
       }
 
-      const data = await response.json();
+      console.log('Raw usage data from DB for user:', user?.email, data);
+      return data || { messages_used: 0, tokens_used: 0 };
+    } catch (error) {
+      console.error('Error getting current usage:', error);
+      return { messages_used: 0, tokens_used: 0 };
+    }
+  }
+
+  async sendMessage(messages: ChatMessage[], customSystemPrompt?: string): Promise<AIResponse> {
+    try {
+      console.log('Sending message to AI chat service:', { messageCount: messages.length });
+      
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: {
+          messages,
+          systemPrompt: customSystemPrompt
+        }
+      });
+
+      if (error) {
+        console.error('Supabase function error:', error);
+        
+        // Check if it's a rate limit error
+        if (error.message && error.message.includes('limit exceeded')) {
+          return {
+            message: "You've reached your daily chat limit! Upgrade to continue chatting with your agent. 🚀",
+            error: error.message,
+            limitExceeded: true
+          };
+        }
+        
+        throw new Error(error.message || 'Failed to get AI response');
+      }
+
+      console.log('AI response received:', data);
+      
       return {
-        message: data.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response right now."
+        message: data?.message || "I'm sorry, I couldn't generate a response right now.",
+        usage: data?.usage,
+        limitExceeded: data?.limitExceeded || false
       };
     } catch (error) {
       console.error('AI Chat Service Error:', error);
+      
+      // Check if it's a fetch error with status 429 (rate limit)
+      if (error instanceof Error && error.message.includes('429')) {
+        return {
+          message: "You've reached your daily chat limit! Upgrade to continue chatting with your agent. 🚀",
+          error: error.message,
+          limitExceeded: true
+        };
+      }
+      
       return {
         message: "I'm having trouble connecting right now. Let me try to help you anyway! What specific questions do you have about your acting career? 🎭",
         error: error instanceof Error ? error.message : 'Unknown error'

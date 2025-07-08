@@ -17,7 +17,7 @@ export const castingService = {
     let query = supabase
       .from('casting_opportunities')
       .select('*')
-      .eq('status', 'active')
+      .eq('status', 'active') // Only get active opportunities
       .order('created_at', { ascending: false });
 
     if (filters?.role_type) {
@@ -32,6 +32,19 @@ export const castingService = {
 
     const { data, error } = await query;
     if (error) throw error;
+    
+    // Filter out dismissed opportunities for the current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: dismissedOpps } = await supabase
+        .from('dismissed_opportunities')
+        .select('opportunity_id')
+        .eq('user_id', user.id);
+      
+      const dismissedIds = new Set(dismissedOpps?.map(d => d.opportunity_id) || []);
+      return (data as CastingOpportunity[]).filter(opp => !dismissedIds.has(opp.id));
+    }
+    
     return data as CastingOpportunity[];
   },
 

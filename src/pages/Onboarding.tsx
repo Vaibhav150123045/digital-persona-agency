@@ -1,224 +1,40 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sparkles, Star } from "lucide-react";
-import { Message, OnboardingData } from "@/types/onboarding";
-import { questions } from "@/utils/onboardingQuestions";
-import ChatMessage from "@/components/onboarding/ChatMessage";
-import TypingIndicator from "@/components/onboarding/TypingIndicator";
+
+import { Card, CardContent } from "@/components/ui/card";
+import { useOnboardingFlow } from "@/hooks/useOnboardingFlow";
+import OnboardingHeader from "@/components/onboarding/OnboardingHeader";
+import OnboardingCardHeader from "@/components/onboarding/OnboardingCardHeader";
+import OnboardingChatArea from "@/components/onboarding/OnboardingChatArea";
 import OnboardingInputArea from "@/components/onboarding/OnboardingInputArea";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/components/ui/use-toast";
-import { getOnboardingSessionId } from "@/utils/onboardingSession";
 
 const Onboarding = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      content: "Welcome to spais Agency! 🎭 I'm so excited to meet you and help kickstart your acting career! I'm your personal AI agent, and I'll be working with you every step of the way. Let's get to know each other better! What's your name?",
-      sender: "onboard bot",
-      timestamp: new Date()
-    }
-  ]);
-  
-  const [currentInput, setCurrentInput] = useState("");
-  const [currentStep, setCurrentStep] = useState(1);
-  const [isTyping, setIsTyping] = useState(false);
-  const [showContinueButton, setShowContinueButton] = useState(false);
-  const [onboardingData, setOnboardingData] = useState<OnboardingData>({
-    name: "",
-    email: "",
-    actorType: "",
-    favoriteGenres: [],
-    picture: null
-  });
-
-  const saveOnboardingData = async (data: OnboardingData) => {
-    try {
-      const sessionId = getOnboardingSessionId();
-      
-      const { error } = await supabase
-        .from('onboarding_sessions')
-        .upsert({
-          session_id: sessionId,
-          name: data.name,
-          email: data.email,
-          actor_type: data.actorType,
-          favorite_genres: data.favoriteGenres
-        }, {
-          onConflict: 'session_id'
-        });
-
-      if (error) {
-        console.error('Error saving onboarding data:', error);
-        toast({
-          title: "Error",
-          description: "Failed to save your information. Please try again.",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
-  const sendMessage = (content: string) => {
-    const userMessage: Message = {
-      id: messages.length + 1,
-      content,
-      sender: "user",
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setCurrentInput("");
-    
-    // Update onboarding data based on current step
-    const newData = { ...onboardingData };
-    switch (currentStep) {
-      case 1:
-        newData.name = content;
-        break;
-      case 2:
-        newData.email = content;
-        break;
-      case 3:
-        newData.actorType = content;
-        break;
-    }
-    setOnboardingData(newData);
-
-    // Save data after name and email are collected
-    if (currentStep >= 2) {
-      saveOnboardingData(newData);
-    }
-
-    // Show typing indicator
-    setIsTyping(true);
-
-    // Simulate AI response delay
-    setTimeout(() => {
-      setIsTyping(false);
-      
-      if (currentStep < 5) {
-        const nextQuestion = questions.find(q => q.step === currentStep + 1);
-        if (nextQuestion) {
-          const aiResponse: Message = {
-            id: messages.length + 2,
-            content: nextQuestion.question.replace("{name}", newData.name),
-            sender: "onboard bot",
-            timestamp: new Date()
-          };
-          setMessages(prev => [...prev, aiResponse]);
-        }
-        setCurrentStep(prev => prev + 1);
-      } else {
-        // Final response before showing continue button
-        const finalResponse: Message = {
-          id: messages.length + 2,
-          content: `Perfect, ${newData.name}! 🌟 I have everything I need to get started. You're all set up and ready to dive into the amazing world of opportunities waiting for you. Click continue when you're ready to explore your personalized dashboard!`,
-          sender: "onboard bot",
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, finalResponse]);
-        setShowContinueButton(true);
-      }
-    }, 1500 + Math.random() * 1000);
-  };
-
-  const handleGenreToggle = (genre: string) => {
-    const newGenres = onboardingData.favoriteGenres.includes(genre)
-      ? onboardingData.favoriteGenres.filter(g => g !== genre)
-      : [...onboardingData.favoriteGenres, genre];
-    
-    const newData = { ...onboardingData, favoriteGenres: newGenres };
-    setOnboardingData(newData);
-    
-    // Save updated data
-    if (newData.name && newData.email) {
-      saveOnboardingData(newData);
-    }
-  };
-
-  const submitGenres = () => {
-    if (onboardingData.favoriteGenres.length === 0) return;
-    
-    const genreText = onboardingData.favoriteGenres.length === 1 
-      ? onboardingData.favoriteGenres[0]
-      : onboardingData.favoriteGenres.slice(0, -1).join(", ") + " and " + onboardingData.favoriteGenres.slice(-1);
-    
-    sendMessage(`I love working in: ${genreText}`);
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setOnboardingData(prev => ({ ...prev, picture: file }));
-      sendMessage(`I've uploaded my profile picture: ${file.name}`);
-    }
-  };
-
-  const skipPicture = () => {
-    sendMessage("I'll skip uploading a picture for now");
-  };
-
-  const handleContinue = async () => {
-    const oboardingUserChat = {
-      user_email: onboardingData.email,
-      chat_history: messages,
-      updated_at: new Date().toISOString()
-    }
-    await supabase.from('chat_histories').insert([
-      oboardingUserChat
-    ])
-    navigate("/dashboard");
-  };
+  const {
+    messages,
+    currentInput,
+    setCurrentInput,
+    currentStep,
+    isTyping,
+    showContinueButton,
+    onboardingData,
+    sendMessage,
+    handleGenreToggle,
+    submitGenres,
+    handleFileUpload,
+    skipPicture,
+    handleContinue
+  } = useOnboardingFlow();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-[rgb(163,92,215)] to-slate-900">
-      {/* Header */}
-      <header className="bg-black/20 backdrop-blur-lg border-b border-white/10 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Star className="h-8 w-8 text-blue-400" />
-            <span className="text-2xl font-bold text-white">spais</span>
-            <span className="text-sm text-blue-300">Agency</span>
-          </div>
-        </div>
-      </header>
+      <OnboardingHeader />
 
       <div className="max-w-4xl mx-auto px-6 py-8">
         <Card className="bg-gray-900/95 backdrop-blur-sm border-gray-700 h-[600px] flex flex-col">
-          <CardHeader className="bg-gray-800/80 border-b border-gray-700 flex-shrink-0">
-            <CardTitle className="text-white flex items-center">
-              <div className="relative">
-                <Sparkles className="h-8 w-8 mr-3 text-blue-400" />
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold">Welcome to spais Agency!</h3>
-                <p className="text-sm text-blue-200 font-normal">Let's get you set up • Step {currentStep} of 5</p>
-              </div>
-            </CardTitle>
-          </CardHeader>
+          <OnboardingCardHeader currentStep={currentStep} />
 
           <CardContent className="flex-1 flex flex-col p-6 bg-gray-900/95 min-h-0">
-            {/* Chat Messages */}
-            <ScrollArea className="flex-1 pr-4 mb-6">
-              <div className="space-y-6">
-                {messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
-                ))}
-                
-                {isTyping && <TypingIndicator />}
-              </div>
-            </ScrollArea>
+            <OnboardingChatArea messages={messages} isTyping={isTyping} />
 
-            {/* Input Area */}
-            {currentStep <= 5 && (
+            {(currentStep <= 6 || showContinueButton) && (
               <div className="space-y-4 flex-shrink-0">
                 <OnboardingInputArea
                   currentStep={currentStep}

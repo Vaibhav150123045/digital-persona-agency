@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +28,7 @@ const DemoOnboarding = () => {
   const [onboardingData, setOnboardingData] = useState<OnboardingData>({
     name: "",
     email: "",
+    location: "",
     actorType: "",
     favoriteGenres: [],
     picture: null
@@ -55,6 +55,9 @@ const DemoOnboarding = () => {
         newData.email = content;
         break;
       case 3:
+        newData.location = content;
+        break;
+      case 4:
         newData.actorType = content;
         break;
     }
@@ -67,7 +70,7 @@ const DemoOnboarding = () => {
     setTimeout(() => {
       setIsTyping(false);
       
-      if (currentStep < 5) {
+      if (currentStep < 6) {
         const nextQuestion = questions.find(q => q.step === currentStep + 1);
         if (nextQuestion) {
           const aiResponse: Message = {
@@ -80,7 +83,7 @@ const DemoOnboarding = () => {
         }
         setCurrentStep(prev => prev + 1);
       } else {
-        // Final response before showing continue button
+        // Final response after step 6 (picture upload)
         const finalResponse: Message = {
           id: messages.length + 2,
           content: `Perfect, ${newData.name}! 🌟 I have everything I need to get started. You're all set up and ready to dive into the amazing world of opportunities waiting for you. Click continue when you're ready to explore your personalized dashboard!`,
@@ -124,7 +127,7 @@ const DemoOnboarding = () => {
   };
 
   const handleContinue = () => {
-    navigate("/demo-dashboard");
+    navigate("/demo/dashboard");
   };
 
   return (
@@ -153,7 +156,7 @@ const DemoOnboarding = () => {
               </div>
               <div>
                 <h3 className="text-xl font-semibold">Welcome to spais Agency!</h3>
-                <p className="text-sm text-blue-200 font-normal">Let's get you set up • Step {currentStep} of 5</p>
+                <p className="text-sm text-blue-200 font-normal">Let's get you set up • Step {currentStep} of 6</p>
               </div>
             </CardTitle>
           </CardHeader>
@@ -171,24 +174,22 @@ const DemoOnboarding = () => {
             </ScrollArea>
 
             {/* Input Area */}
-            {currentStep <= 5 && (
-              <div className="space-y-4 flex-shrink-0">
-                <OnboardingInputArea
-                  currentStep={currentStep}
-                  currentInput={currentInput}
-                  setCurrentInput={setCurrentInput}
-                  onboardingData={onboardingData}
-                  isTyping={isTyping}
-                  showContinueButton={showContinueButton}
-                  onSendMessage={sendMessage}
-                  onGenreToggle={handleGenreToggle}
-                  onSubmitGenres={submitGenres}
-                  onFileUpload={handleFileUpload}
-                  onSkipPicture={skipPicture}
-                  onContinue={handleContinue}
-                />
-              </div>
-            )}
+            <div className="space-y-4 flex-shrink-0">
+              <OnboardingInputArea
+                currentStep={currentStep}
+                currentInput={currentInput}
+                setCurrentInput={setCurrentInput}
+                onboardingData={onboardingData}
+                isTyping={isTyping}
+                showContinueButton={showContinueButton}
+                onSendMessage={sendMessage}
+                onGenreToggle={handleGenreToggle}
+                onSubmitGenres={submitGenres}
+                onFileUpload={handleFileUpload}
+                onSkipPicture={skipPicture}
+                onContinue={handleContinue}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

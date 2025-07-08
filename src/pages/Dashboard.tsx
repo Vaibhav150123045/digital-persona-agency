@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { getOnboardingSessionId } from "@/utils/onboardingSession";
+import { getOnboardingSessionId, clearOnboardingSession } from "@/utils/onboardingSession";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import ProfileOverview from "@/components/dashboard/ProfileOverview";
 import AIInsights from "@/components/dashboard/AIInsights";
@@ -13,7 +13,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Shield } from "lucide-react";
 import { BookOpen } from "lucide-react";
-import { Message } from "@/types/onboarding";
 
 const Dashboard = () => {
   const { user, loading, signOut } = useAuth();
@@ -30,10 +29,6 @@ const Dashboard = () => {
   ]);
   const [userRole, setUserRole] = useState<string>('basic_user');
   const [isCourseProvider, setIsCourseProvider] = useState(false);
-  const [chatHistory, setChatHistory] = useState<
-    { id: number, content: string, sender: "user" | "ai", timestamp: Date;}[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
-
 
   // Check for onboarding data if no user is logged in
   useEffect(() => {
@@ -48,8 +43,11 @@ const Dashboard = () => {
             .maybeSingle();
 
           if (data && !error) {
+            console.log("Onboarding data retrieved:", data);
             setOnboardingData(data);
+            // Don't clear the onboarding session immediately - keep it until user completes signup
           } else {
+            console.log("No onboarding data found, redirecting to home");
             navigate("/");
           }
         } catch (error) {
@@ -121,36 +119,6 @@ const Dashboard = () => {
     }
   }, [user, toast]);
 
-  // Fetch chat history for authenticated user
-  useEffect(() => {
-    const userEmail = onboardingData?.email || user?.email;
-    if (!userEmail) return;
-  
-    const fetchChatHistory = async () => {
-      setChatLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('chat_histories')
-          .select('chat_history')
-          .eq('user_email', userEmail)
-          .maybeSingle();
-  
-        if (error) {
-          console.error('Error fetching chat history:', error);
-        } else {
-          setChatHistory(data?.chat_history ?? []);
-        }
-      } catch (err) {
-        console.error('Fetch error', err);
-      } finally {
-        setChatLoading(false);
-      }
-    };
-  
-    fetchChatHistory();
-  }, [onboardingData?.email, user?.email, activeTab]); 
-
-
   const checkUserRole = async () => {
     if (user) {
       try {
@@ -210,13 +178,25 @@ const Dashboard = () => {
 
   const handleSignupComplete = () => {
     setShowSignupPrompt(false);
-    navigate("/auth");
+    // Don't navigate anywhere - just hide the prompt and stay on dashboard
   };
 
   const isFeatureLocked = (user: any, userProfile: any) => {
     if (isAdmin) return false; // Admins have access to everything
     if (isPremiumUser) return false; // Premium users have access to most features
     return !user || !userProfile?.signup_completed;
+  };
+
+  // New function specifically for chat access - more permissive
+  const isChatLocked = (user: any, userProfile: any, onboardingData: any) => {
+    if (isAdmin) return false; // Admins have access to everything
+    if (isPremiumUser) return false; // Premium users have access to most features
+    
+    // Allow chat access if user has completed onboarding (even without full signup)
+    if (onboardingData && onboardingData.name && onboardingData.email) return false;
+    if (user && userProfile) return false; // Any authenticated user with profile
+    
+    return true; // Lock chat for users with no onboarding data
   };
 
   const showLockedFeature = () => {
@@ -236,26 +216,35 @@ const Dashboard = () => {
     // Admin has access to everything
     if (isAdmin) return;
     
-    const lockedTabs = ["opportunities", "calendar", "assets", "kanban", "search", "courses", "referrals"];
+    // Special handling for chat - use the more permissive chat lock function
+    if (value === "chat") {
+      if (isChatLocked(user, userProfile, onboardingData)) {
+        showLockedFeature();
+        return;
+      }
+      return; // Allow chat access
+    }
+    
+    // For all other tabs, use the regular feature lock (including agent tab)
+    const lockedTabs = ["opportunities", "assets", "search", "courses", "referrals", "agent"];
     if (lockedTabs.includes(value) && isFeatureLocked(user, userProfile)) {
       showLockedFeature();
       return;
     }
   };
 
-  const handleChatUpdate = async (updatedMessages: Message[]) => {
-    const userEmail = onboardingData?.email || user?.email;
-    if (!userEmail) return;
-  
-    const chatRecord = {
-      user_email: userEmail,
-      chat_history: updatedMessages,
-      updated_at: new Date().toISOString()
-    };
-  
-    await supabase
-      .from("chat_histories")
-      .upsert([chatRecord], { onConflict: "user_email" });
+  const handleChatClick = () => {
+    if (isChatLocked(user, userProfile, onboardingData)) {
+      showLockedFeature();
+    } else {
+      setActiveTab("chat");
+    }
+  };
+
+  // Helper function to convert base64 to displayable image
+  const getProfilePictureUrl = (pictureBase64: string | null) => {
+    if (!pictureBase64) return null;
+    return pictureBase64; // base64 strings can be used directly as src
   };
 
   if (loading || profileLoading) {
@@ -266,10 +255,12 @@ const Dashboard = () => {
     );
   }
 
+  // Only show signup prompt when explicitly requested (not automatically)
   if (showSignupPrompt && onboardingData) {
     return <SignupPrompt userEmail={onboardingData.email} onSignupComplete={handleSignupComplete} />;
   }
 
+  // Allow access to dashboard if user has onboarding data (even without being logged in)
   if (!user && !onboardingData) {
     return null;
   }
@@ -287,12 +278,13 @@ const Dashboard = () => {
     totalEarnings: 0,
     activeAuditions: 0,
     completedProjects: 0,
-    isNewUser: !userProfile.onboarding_completed
+    isNewUser: !userProfile.onboarding_completed,
+    profilePicture: null // No picture for authenticated users yet
   } : onboardingData ? {
     name: onboardingData.name,
     email: onboardingData.email,
     role: "Actor",
-    location: "Los Angeles, CA",
+    location: onboardingData.location || "Los Angeles, CA",
     actorType: onboardingData.actor_type,
     favoriteGenres: onboardingData.favorite_genres || [],
     joinDate: "Just joined",
@@ -301,7 +293,8 @@ const Dashboard = () => {
     totalEarnings: 0,
     activeAuditions: 0,
     completedProjects: 0,
-    isNewUser: true
+    isNewUser: true,
+    profilePicture: onboardingData.picture_base64 || null // Use the base64 string from database
   } : null;
 
   if (!displayProfile) {
@@ -398,14 +391,13 @@ const Dashboard = () => {
           activeTab={activeTab}
           onTabChange={handleTabChange}
           isFeatureLocked={isFeatureLocked(user, userProfile)}
+          isChatLocked={isChatLocked(user, userProfile, onboardingData)}
           onShowLockedFeature={showLockedFeature}
           displayProfile={displayProfile}
           recentActivity={recentActivity}
           upcomingAuditions={upcomingAuditions}
           userRole={userRole}
           isPremiumUser={isPremiumUser}
-          chatHistory={chatHistory}
-          onChatUpdate={handleChatUpdate}
         />
       </div>
     </div>

@@ -1,7 +1,6 @@
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, Check } from "lucide-react";
+import { Upload, Check, Image } from "lucide-react";
 import { OnboardingData } from "@/types/onboarding";
 
 interface OnboardingInputAreaProps {
@@ -34,7 +33,24 @@ const OnboardingInputArea = ({
   onContinue,
 }: OnboardingInputAreaProps) => {
   const actorTypeOptions = ["Stage", "Screen", "Both"];
+  const locationOptions = ["London", "Los Angeles"];
   const genreOptions = ["Drama", "Comedy", "Action", "Horror", "Romance", "Thriller", "Sci-Fi", "Fantasy", "Musical"];
+
+  const handleFileClick = () => {
+    console.log("File upload button clicked");
+    const fileInput = document.getElementById("picture-upload") as HTMLInputElement;
+    if (fileInput) {
+      console.log("Triggering file input click");
+      fileInput.click();
+    } else {
+      console.log("File input not found");
+    }
+  };
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log("File input changed:", event.target.files);
+    onFileUpload(event);
+  };
 
   if (showContinueButton) {
     return (
@@ -53,7 +69,7 @@ const OnboardingInputArea = ({
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-1 gap-3">
-          {actorTypeOptions.map((option) => (
+          {locationOptions.map((option) => (
             <Button
               key={option}
               variant="outline"
@@ -69,6 +85,25 @@ const OnboardingInputArea = ({
   }
 
   if (currentStep === 4) {
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3">
+          {actorTypeOptions.map((option) => (
+            <Button
+              key={option}
+              variant="outline"
+              className="bg-white/5 backdrop-blur-sm border-2 border-white/30 text-white hover:bg-white/15 hover:border-white/50 hover:text-white justify-start py-4 text-base font-medium transition-all duration-300 rounded-xl shadow-lg"
+              onClick={() => onSendMessage(option)}
+            >
+              {option}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (currentStep === 5) {
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -105,22 +140,49 @@ const OnboardingInputArea = ({
     );
   }
 
-  if (currentStep === 5) {
+  if (currentStep === 6) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
+        {onboardingData.picture && (
+          <div className="flex justify-center">
+            <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-blue-400/50 shadow-lg">
+              <img 
+                src={URL.createObjectURL(onboardingData.picture)} 
+                alt="Profile preview" 
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+            </div>
+          </div>
+        )}
+        
         <div className="flex space-x-3">
-          <label className="flex-1">
+          <div className="flex-1">
             <input
               type="file"
               accept="image/*"
-              onChange={onFileUpload}
+              onChange={handleFileInputChange}
               className="hidden"
+              id="picture-upload"
             />
-            <Button className="w-full bg-blue-500/90 backdrop-blur-sm hover:bg-blue-600/90 border border-blue-400/30 py-3 text-base font-medium text-white rounded-xl shadow-lg transition-all duration-300">
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Picture
+            <Button 
+              type="button"
+              onClick={handleFileClick}
+              className="w-full bg-blue-500/90 backdrop-blur-sm hover:bg-blue-600/90 border border-blue-400/30 py-3 text-base font-medium text-white rounded-xl shadow-lg transition-all duration-300 flex items-center justify-center"
+            >
+              {onboardingData.picture ? (
+                <>
+                  <Image className="h-4 w-4 mr-2" />
+                  Change Picture
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Picture
+                </>
+              )}
             </Button>
-          </label>
+          </div>
           <Button
             variant="outline"
             onClick={onSkipPicture}
@@ -138,7 +200,11 @@ const OnboardingInputArea = ({
       <Input
         value={currentInput}
         onChange={(e) => setCurrentInput(e.target.value)}
-        placeholder={currentStep === 1 ? "Enter your name..." : currentStep === 2 ? "Enter your email..." : "Type your answer..."}
+        placeholder={
+          currentStep === 1 ? "Enter your name..." : 
+          currentStep === 2 ? "Enter your email..." : 
+          "Type your answer..."
+        }
         className="bg-gray-800 border-gray-600 text-white placeholder-gray-400 rounded-xl"
         onKeyPress={(e) => e.key === "Enter" && currentInput.trim() && onSendMessage(currentInput)}
       />

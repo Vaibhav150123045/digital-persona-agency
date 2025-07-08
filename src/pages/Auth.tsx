@@ -10,6 +10,7 @@ import { Star, LogIn, UserPlus } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -21,17 +22,28 @@ const Auth = () => {
   const [activeTab, setActiveTab] = useState("login");
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
 
   // Check if user is already logged in
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navigate("/dashboard");
-      }
-    };
-    checkAuth();
-  }, [navigate]);
+    if (!loading && user) {
+      console.log('User already authenticated, redirecting to dashboard');
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, loading, navigate]);
+
+  // Don't render the auth form if user is already authenticated or still loading
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (user) {
+    return null; // Will redirect via useEffect
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +66,7 @@ const Auth = () => {
           title: "Welcome Back! 🎬",
           description: "Successfully logged in to your SPAIS account."
         });
-        navigate("/dashboard");
+        navigate("/dashboard", { replace: true });
       }
     } catch (error) {
       toast({

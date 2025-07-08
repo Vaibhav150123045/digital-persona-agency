@@ -15,3 +15,9 @@ export const getOnboardingSessionId = (): string => {
 export const clearOnboardingSession = (): void => {
   localStorage.removeItem('onboarding_session_id');
 };
+
+// Force create a new session (useful when starting fresh onboarding)
+export const createNewOnboardingSession = (): string => {
+  clearOnboardingSession();
+  return getOnboardingSessionId();
+};

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://cdn.skypack.dev/@supabase/supabase-js@2.49.8'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +28,14 @@ interface ScrapedJob {
   gender_requirements?: string;
 }
 
+interface UserProfile {
+  id: string;
+  name: string;
+  location?: string;
+  actor_type?: string;
+  favorite_genres?: string[];
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -37,10 +45,10 @@ serve(async (req) => {
   try {
     const { websites, searchTerms = [] }: JobScrapeRequest = await req.json();
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
-    const browserlessApiKey = Deno.env.get('BROWSERLESS_API_KEY');
 
-    console.log('🚀 Starting job scraping for websites:', websites);
-    console.log('🔍 Search terms:', searchTerms);
+    console.log('🚀 Starting job scraping with enhanced child role filtering');
+    console.log('🔧 Firecrawl API available:', !!firecrawlApiKey);
+    console.log('🌐 Target websites:', websites);
 
     const scrapedJobs: ScrapedJob[] = [];
 
@@ -49,95 +57,193 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    for (const website of websites) {
+    // Test database connectivity
+    console.log('🔍 Testing database connectivity...');
+    const { data: testData, error: testError } = await supabase
+      .from('casting_opportunities')
+      .select('id')
+      .limit(1);
+    
+    if (testError) {
+      console.error('❌ Database connection failed:', testError);
+      throw new Error(`Database connection failed: ${testError.message}`);
+    }
+    console.log('✅ Database connected successfully');
+
+    // Get user profiles for filtering
+    console.log('👥 Getting user profiles for filtering...');
+    const { data: userProfiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, name, location, actor_type, favorite_genres');
+    
+    if (profilesError) {
+      console.error('❌ Error fetching user profiles:', profilesError);
+    }
+
+    console.log(`👥 Found ${userProfiles?.length || 0} user profiles`);
+
+    // Website configurations
+    const websiteConfigs = [
+      {
+        url: "https://www.backstage.com/casting/",
+        platform: "backstage.com",
+        requiresAuth: false
+      },
+      {
+        url: "https://app.spotlight.com/jobs/all-opportunities",
+        platform: "spotlight.com", 
+        requiresAuth: true
+      },
+      {
+        url: "https://www.castingnetworks.com/auditions",
+        platform: "castingnetworks.com",
+        requiresAuth: false
+      }
+    ];
+
+    const targetConfigs = websites?.length ? 
+      websiteConfigs.filter(config => websites.includes(config.url)) : 
+      websiteConfigs;
+
+    for (const config of targetConfigs) {
       try {
-        console.log(`\n🌐 Processing website: ${website}`);
+        console.log(`\n🌐 Processing website: ${config.url}`);
         
-        // Determine scraping method based on website
-        let extractedJobs: ScrapedJob[] = [];
-        
-        if (shouldUseBrowserless(website) && browserlessApiKey) {
-          console.log(`🤖 Using Browserless for ${website}`);
-          extractedJobs = await scrapeWithBrowserless(website, browserlessApiKey);
-        } else if (firecrawlApiKey) {
-          console.log(`🔥 Using Firecrawl for ${website}`);
-          extractedJobs = await scrapeWithFirecrawl(website, firecrawlApiKey);
-        } else {
-          console.log('❌ No scraping API keys available');
+        if (!firecrawlApiKey) {
+          console.log('❌ No Firecrawl API key available');
           continue;
         }
 
-        scrapedJobs.push(...extractedJobs);
-        console.log(`✅ Extracted ${extractedJobs.length} valid jobs from ${website}`);
+        console.log(`🔥 Using Firecrawl for ${config.platform}`);
+        const extractedJobs = await scrapeWithFirecrawl(config.url, config.platform, firecrawlApiKey);
+        console.log(`🔥 Firecrawl returned ${extractedJobs.length} jobs`);
+
+        // Filter and validate jobs
+        const validJobs = extractedJobs.filter((job, index) => {
+          const validation = validateJobData(job);
+          if (!validation.isValid) {
+            console.log(`❌ Job ${index + 1} invalid: ${validation.reason}`);
+            return false;
+          }
+          return true;
+        });
+
+        scrapedJobs.push(...validJobs);
+        console.log(`✅ Valid jobs from ${config.url}: ${validJobs.length}`);
 
       } catch (error) {
-        console.error(`❌ Error scraping ${website}:`, error);
+        console.error(`❌ Error scraping ${config.url}:`, error.message);
       }
     }
 
-    console.log(`\n📊 SCRAPING SUMMARY:`);
-    console.log(`📈 Total jobs extracted: ${scrapedJobs.length}`);
+    console.log(`\n📊 Total valid jobs found: ${scrapedJobs.length}`);
 
-    // Save jobs to database with better validation logging
+    if (scrapedJobs.length === 0) {
+      console.log('⚠️ No jobs found - returning early');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "No valid jobs found during scraping",
+          totalFound: 0,
+          newJobs: 0,
+          duplicates: 0,
+          rejected: 0
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    // Save jobs to database with enhanced user-specific filtering
     let savedCount = 0;
     let duplicateCount = 0;
     let rejectedCount = 0;
     
     for (const [index, job] of scrapedJobs.entries()) {
       try {
-        console.log(`\n🔍 Processing job ${index + 1}/${scrapedJobs.length}:`);
-        console.log(`📝 Title: "${job.title}"`);
-        console.log(`🔗 URL: ${job.external_url}`);
+        console.log(`\n🔍 Processing job ${index + 1}/${scrapedJobs.length}: "${job.title}"`);
         
-        // Validate job data with detailed logging
-        const validationResult = validateJobData(job);
-        if (!validationResult.isValid) {
-          console.log(`❌ REJECTED: ${validationResult.reason}`);
+        // Enhanced child role filtering - reject immediately if it's a child role
+        if (isChildRole(job)) {
+          console.log(`🚫 CHILD ROLE DETECTED - Rejecting: "${job.title}"`);
+          rejectedCount++;
+          continue;
+        }
+        
+        // Check for duplicates
+        const cleanTitle = job.title.replace(/[%_'"]/g, '').substring(0, 50);
+        
+        const { data: existing, error: searchError } = await supabase
+          .from('casting_opportunities')
+          .select('id, title, source_platform')
+          .eq('source_platform', job.source_platform)
+          .ilike('title', `%${cleanTitle}%`)
+          .limit(10);
+
+        if (searchError) {
+          console.error('❌ Error checking duplicates:', searchError);
+        }
+
+        let isDuplicate = false;
+        if (existing && existing.length > 0) {
+          for (const existingJob of existing) {
+            const similarity = calculateTitleSimilarity(job.title, existingJob.title);
+            if (similarity > 0.85) {
+              console.log(`🔄 DUPLICATE found (${Math.round(similarity * 100)}%)`);
+              isDuplicate = true;
+              break;
+            }
+          }
+        }
+
+        if (isDuplicate) {
+          duplicateCount++;
+          continue;
+        }
+
+        // Filter job based on user profiles (but child roles are already filtered out above)
+        const isJobAppropriate = isJobAppropriateForUsers(job, userProfiles || []);
+        if (!isJobAppropriate) {
+          console.log(`🚫 Job filtered out - not appropriate for any users`);
           rejectedCount++;
           continue;
         }
 
-        // Check if job already exists by external_url or title
-        const { data: existing } = await supabase
+        console.log('💾 Inserting new job...');
+        const insertData = {
+          title: job.title,
+          project_name: job.project_name,
+          description: job.description,
+          location: job.location,
+          compensation_range: job.compensation_range,
+          role_type: job.role_type as any,
+          application_deadline: job.application_deadline,
+          external_url: job.external_url,
+          source_platform: job.source_platform,
+          casting_director: job.casting_director,
+          requirements: job.requirements,
+          genres: job.genres,
+          age_range: job.age_range,
+          gender_requirements: job.gender_requirements,
+          status: 'active'
+        };
+
+        const { data: insertResult, error: insertError } = await supabase
           .from('casting_opportunities')
-          .select('id')
-          .or(`external_url.eq.${job.external_url},title.eq.${job.title}`)
-          .maybeSingle();
+          .insert(insertData)
+          .select('id, title');
 
-        if (!existing) {
-          const { error } = await supabase
-            .from('casting_opportunities')
-            .insert({
-              title: job.title,
-              project_name: job.project_name,
-              description: job.description,
-              location: job.location,
-              compensation_range: job.compensation_range,
-              role_type: job.role_type as any,
-              application_deadline: job.application_deadline,
-              external_url: job.external_url,
-              source_platform: job.source_platform,
-              casting_director: job.casting_director,
-              requirements: job.requirements,
-              genres: job.genres,
-              age_range: job.age_range,
-              gender_requirements: job.gender_requirements,
-              status: 'active'
-            });
-
-          if (!error) {
-            savedCount++;
-            console.log(`✅ SAVED: "${job.title}"`);
-          } else {
-            console.error(`❌ DB Error saving job:`, error);
-            rejectedCount++;
-          }
+        if (insertError) {
+          console.error(`❌ DB Insert Error:`, insertError);
+          rejectedCount++;
         } else {
-          duplicateCount++;
-          console.log(`🔄 DUPLICATE: Job already exists`);
+          savedCount++;
+          console.log(`✅ SAVED with ID: ${insertResult?.[0]?.id}`);
         }
       } catch (error) {
-        console.error(`❌ Error processing job:`, error);
+        console.error(`❌ Error processing job ${index + 1}:`, error.message);
         rejectedCount++;
       }
     }
@@ -150,7 +256,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully scraped and saved ${savedCount} new jobs from ${websites.length} websites`,
+        message: `Successfully scraped and saved ${savedCount} new jobs`,
         totalFound: scrapedJobs.length,
         newJobs: savedCount,
         duplicates: duplicateCount,
@@ -163,11 +269,11 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('❌ Critical error in scrape-acting-jobs function:', error);
+    console.error('❌ Critical error in scrape-acting-jobs function:', error.message);
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: error.message
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -177,367 +283,238 @@ serve(async (req) => {
   }
 });
 
-function validateJobData(job: ScrapedJob): { isValid: boolean; reason?: string } {
-  if (!job.title) {
-    return { isValid: false, reason: 'Missing title' };
+// Enhanced child role detection function
+function isChildRole(job: ScrapedJob): boolean {
+  const title = job.title.toLowerCase();
+  const description = (job.description || '').toLowerCase();
+  const requirements = (job.requirements || '').toLowerCase();
+  const ageRange = (job.age_range || '').toLowerCase();
+  
+  const fullText = `${title} ${description} ${requirements} ${ageRange}`;
+  
+  // Comprehensive list of child-related keywords and patterns
+  const childKeywords = [
+    // Direct age references
+    'child', 'children', 'kid', 'kids', 'baby', 'babies', 'toddler', 'toddlers', 
+    'infant', 'infants', 'newborn', 'newborns',
+    
+    // Age ranges that indicate children
+    'under 13', 'under 12', 'under 10', 'under 8', 'under 6', 'under 5',
+    'ages 0-', 'ages 1-', 'ages 2-', 'ages 3-', 'ages 4-', 'ages 5-', 
+    'ages 6-', 'ages 7-', 'ages 8-', 'ages 9-', 'ages 10-', 'ages 11-', 'ages 12-',
+    '0-13', '1-13', '2-13', '3-13', '4-13', '5-13', '6-13', '7-13', '8-13', '9-13', '10-13', '11-13', '12-13',
+    '0-12', '1-12', '2-12', '3-12', '4-12', '5-12', '6-12', '7-12', '8-12', '9-12', '10-12', '11-12',
+    '0-10', '1-10', '2-10', '3-10', '4-10', '5-10', '6-10', '7-10', '8-10', '9-10',
+    
+    // School-related terms
+    'elementary', 'kindergarten', 'preschool', 'pre-school', 'daycare', 'nursery school',
+    
+    // Family roles
+    'son', 'daughter', 'little boy', 'little girl', 'young boy', 'young girl',
+    
+    // Specific age mentions
+    '1 year old', '2 year old', '3 year old', '4 year old', '5 year old',
+    '6 year old', '7 year old', '8 year old', '9 year old', '10 year old',
+    '11 year old', '12 year old',
+    
+    // Alternative spellings and formats
+    'yr old', 'yrs old', 'years old',
+    
+    // Other child-specific terms
+    'minor', 'minors', 'juvenile', 'juveniles', 'youth under', 'children under'
+  ];
+  
+  // Check if any child keywords are present
+  const hasChildKeywords = childKeywords.some(keyword => fullText.includes(keyword));
+  
+  if (hasChildKeywords) {
+    console.log(`🚫 Child role detected in "${job.title}" - Keywords found in: ${fullText.substring(0, 200)}...`);
+    return true;
   }
   
-  if (job.title.length < 10) {
-    return { isValid: false, reason: `Title too short (${job.title.length} chars): "${job.title}"` };
+  // Additional pattern matching for numeric age ranges
+  const agePatterns = [
+    /\b([0-9]|1[0-2])\s*[-–—]\s*([0-9]|1[0-7])\b/g, // Matches patterns like "5-12", "8-15", etc.
+    /\bages?\s+([0-9]|1[0-2])\s*[-–—]\s*([0-9]|1[0-7])\b/gi, // "age 6-12", "ages 5-10"
+    /\b([0-9]|1[0-2])\s*to\s*([0-9]|1[0-7])\s*years?\s*old\b/gi, // "5 to 12 years old"
+  ];
+  
+  for (const pattern of agePatterns) {
+    const matches = fullText.match(pattern);
+    if (matches) {
+      for (const match of matches) {
+        // Extract the age numbers from the match
+        const numbers = match.match(/\d+/g);
+        if (numbers && numbers.length >= 2) {
+          const minAge = parseInt(numbers[0]);
+          const maxAge = parseInt(numbers[1]);
+          
+          // If the range includes ages 12 and under, it's likely a child role
+          if (minAge <= 12 || maxAge <= 12) {
+            console.log(`🚫 Child role detected in "${job.title}" - Age range pattern: ${match}`);
+            return true;
+          }
+        }
+      }
+    }
+  }
+  
+  return false;
+}
+
+function isJobAppropriateForUsers(job: ScrapedJob, userProfiles: UserProfile[]): boolean {
+  if (!userProfiles || userProfiles.length === 0) {
+    return false;
+  }
+
+  for (const user of userProfiles) {
+    if (isJobAppropriateForUser(job, user)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isJobAppropriateForUser(job: ScrapedJob, user: UserProfile): boolean {
+  return isAgeAppropriate(job, user) && isLocationAppropriate(job, user);
+}
+
+function isAgeAppropriate(job: ScrapedJob, user: UserProfile): boolean {
+  const ageRange = job.age_range?.toLowerCase() || '';
+  const title = job.title.toLowerCase();
+  const description = (job.description || '').toLowerCase();
+  const requirements = (job.requirements || '').toLowerCase();
+  
+  const fullText = `${title} ${description} ${requirements} ${ageRange}`;
+  
+  // Teen-specific keywords (but not child keywords)
+  const teenKeywords = [
+    'teen', 'teenager', 'teenagers', 'adolescent', 'youth', 'high school',
+    'ages 13-17', 'ages 14-18', 'ages 15-19', '13-17', '14-18', '15-19',
+    'sophomore', 'junior', 'senior', 'freshman', 'young adult'
+  ];
+
+  const hasTeenKeywords = teenKeywords.some(keyword => fullText.includes(keyword));
+  
+  const userActorType = user.actor_type?.toLowerCase() || '';
+  
+  // If it has teen keywords but user is not teen/young actor, filter out
+  if (hasTeenKeywords && !userActorType.includes('teen') && !userActorType.includes('young')) {
+    return false;
+  }
+  
+  return true;
+}
+
+function isLocationAppropriate(job: ScrapedJob, user: UserProfile): boolean {
+  if (!job.location || !user.location) {
+    return true;
+  }
+  
+  const jobLocation = job.location.toLowerCase();
+  const userLocation = user.location.toLowerCase();
+  
+  const extractLocation = (location: string) => {
+    const patterns = [
+      /([a-z\s]+),\s*([a-z]{2})/i,
+      /([a-z\s]+)\s+area/i,
+      /greater\s+([a-z\s]+)/i,
+      /([a-z\s]+)\s+region/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = location.match(pattern);
+      if (match) {
+        return match[1].trim().toLowerCase();
+      }
+    }
+    
+    return location.split(',')[0].trim().toLowerCase();
+  };
+  
+  const jobCity = extractLocation(jobLocation);
+  const userCity = extractLocation(userLocation);
+  
+  if (jobCity.includes(userCity) || userCity.includes(jobCity)) {
+    return true;
+  }
+  
+  const jobState = jobLocation.match(/,\s*([a-z]{2})/i)?.[1]?.toLowerCase();
+  const userState = userLocation.match(/,\s*([a-z]{2})/i)?.[1]?.toLowerCase();
+  
+  if (jobState && userState && jobState === userState) {
+    return true;
+  }
+  
+  const metroAreas = {
+    'los angeles': ['la', 'hollywood', 'beverly hills', 'santa monica', 'burbank', 'pasadena'],
+    'new york': ['nyc', 'manhattan', 'brooklyn', 'queens', 'bronx'],
+    'san francisco': ['sf', 'bay area', 'oakland', 'san jose'],
+    'chicago': ['il', 'illinois'],
+    'atlanta': ['ga', 'georgia'],
+    'miami': ['fl', 'florida']
+  };
+  
+  for (const [metro, aliases] of Object.entries(metroAreas)) {
+    const isJobInMetro = jobCity.includes(metro) || aliases.some(alias => jobCity.includes(alias));
+    const isUserInMetro = userCity.includes(metro) || aliases.some(alias => userCity.includes(alias));
+    
+    if (isJobInMetro && isUserInMetro) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+function calculateTitleSimilarity(title1: string, title2: string): number {
+  const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const norm1 = normalize(title1);
+  const norm2 = normalize(title2);
+  
+  if (norm1 === norm2) return 1.0;
+  if (norm1.length === 0 || norm2.length === 0) return 0;
+  
+  const words1 = new Set(norm1.split(/\s+/));
+  const words2 = new Set(norm2.split(/\s+/));
+  const intersection = new Set([...words1].filter(x => words2.has(x)));
+  const union = new Set([...words1, ...words2]);
+  
+  return intersection.size / union.size;
+}
+
+function validateJobData(job: ScrapedJob): { isValid: boolean; reason?: string } {
+  if (!job.title || job.title.trim().length === 0) {
+    return { isValid: false, reason: 'Missing or empty title' };
+  }
+  
+  if (job.title.length < 3) {
+    return { isValid: false, reason: `Title too short: "${job.title}"` };
   }
   
   if (!job.external_url) {
     return { isValid: false, reason: 'Missing external URL' };
   }
   
-  if (isJunkTitle(job.title)) {
-    return { isValid: false, reason: `Title appears to be junk: "${job.title}"` };
+  if (isJunkContent(job.title, job.description)) {
+    return { isValid: false, reason: `Content appears to be junk: "${job.title}"` };
   }
   
   return { isValid: true };
 }
 
-function shouldUseBrowserless(website: string): boolean {
-  // Use Browserless for sites that typically require authentication or complex interactions
-  const browserlessSites = [
-    'spotlight.com',
-    'castingnetworks.com',
-    'actorsaccess.com',
-    'breakdown.com'
-  ];
-  
-  return browserlessSites.some(site => website.includes(site));
-}
-
-async function scrapeWithBrowserless(website: string, apiKey: string): Promise<ScrapedJob[]> {
-  try {
-    console.log(`🤖 Sending request to Browserless for ${website}`);
-    
-    // Create Puppeteer script for headless browsing
-    const puppeteerScript = createPuppeteerScript(website);
-    
-    const response = await fetch(`https://chrome.browserless.io/function?token=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        code: puppeteerScript,
-        context: { website }
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Browserless API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log(`🤖 Browserless raw result:`, result);
-
-    if (result.data && Array.isArray(result.data)) {
-      console.log(`🤖 Browserless found ${result.data.length} potential jobs`);
-      return result.data.map((job: any) => ({
-        ...job,
-        source_platform: getDomainName(website)
-      }));
-    }
-
-    console.log(`🤖 Browserless returned no valid data`);
-    return [];
-  } catch (error) {
-    console.error(`❌ Browserless error for ${website}:`, error);
-    return [];
-  }
-}
-
-function createPuppeteerScript(website: string): string {
-  if (website.includes('spotlight.com')) {
-    return createSpotlightScript();
-  } else if (website.includes('castingnetworks.com')) {
-    return createCastingNetworksScript();
-  } else if (website.includes('actorsaccess.com')) {
-    return createActorsAccessScript();
-  } else {
-    return createGenericScript();
-  }
-}
-
-function createSpotlightScript(): string {
-  return `
-    module.exports = async (context) => {
-      const { website } = context;
-      const jobs = [];
-      
-      try {
-        console.log('🎬 Navigating to Spotlight...');
-        await page.goto(website, { waitUntil: 'networkidle2' });
-        
-        // Wait for casting listings to load
-        console.log('⏳ Waiting for casting listings...');
-        await page.waitForSelector('.job-item, .casting-item, .role-item', { timeout: 10000 });
-        
-        // Extract job listings
-        const jobElements = await page.$$('.job-item, .casting-item, .role-item');
-        console.log(\`🎭 Found \${jobElements.length} job elements\`);
-        
-        for (const [index, element] of jobElements.entries()) {
-          try {
-            console.log(\`🔍 Processing element \${index + 1}\`);
-            const title = await element.$eval('h2, h3, .title', el => el.textContent?.trim()).catch(() => '');
-            const description = await element.$eval('.description, .summary', el => el.textContent?.trim()).catch(() => '');
-            const location = await element.$eval('.location', el => el.textContent?.trim()).catch(() => '');
-            const deadline = await element.$eval('.deadline, .closes', el => el.textContent?.trim()).catch(() => '');
-            const roleType = await element.$eval('.role-type', el => el.textContent?.trim()).catch(() => 'background');
-            const projectName = await element.$eval('.project, .production', el => el.textContent?.trim()).catch(() => '');
-            
-            console.log(\`📝 Extracted: "\${title}" - \${title.length} chars\`);
-            
-            if (title && title.length > 10) {
-              jobs.push({
-                title: title,
-                project_name: projectName,
-                description: description,
-                location: location,
-                role_type: determineRoleType(roleType, title + ' ' + description),
-                application_deadline: deadline,
-                external_url: website,
-                casting_director: '',
-                requirements: description?.slice(0, 200),
-                genres: extractGenres(title + ' ' + description),
-                age_range: extractAgeRange(description || ''),
-                gender_requirements: extractGender(description || '')
-              });
-              console.log(\`✅ Added job: "\${title}"\`);
-            } else {
-              console.log(\`❌ Rejected: title too short or missing\`);
-            }
-          } catch (err) {
-            console.log('❌ Error extracting job element:', err);
-          }
-        }
-        
-      } catch (error) {
-        console.error('❌ Error scraping Spotlight:', error);
-      }
-      
-      console.log(\`🎬 Spotlight final count: \${jobs.length} jobs\`);
-      return { data: jobs };
-    };
-    
-    function determineRoleType(roleText, content) {
-      const text = (roleText + ' ' + content).toLowerCase();
-      if (text.includes('lead') || text.includes('principal') || text.includes('main')) return 'lead';
-      if (text.includes('supporting') || text.includes('featured')) return 'supporting';
-      return 'background';
-    }
-    
-    function extractGenres(text) {
-      const genres = [];
-      const genrePatterns = ['drama', 'comedy', 'thriller', 'horror', 'action', 'romance', 'sci-fi'];
-      for (const genre of genrePatterns) {
-        if (text.toLowerCase().includes(genre)) genres.push(genre);
-      }
-      return genres;
-    }
-    
-    function extractAgeRange(text) {
-      const ageMatch = text.match(/age[s]?[:\s]*([0-9\s\-to]{3,15})/i);
-      return ageMatch ? ageMatch[1].trim() : '';
-    }
-    
-    function extractGender(text) {
-      const genderMatch = text.match(/(male|female|non-binary|any gender)/i);
-      return genderMatch ? genderMatch[1] : '';
-    }
-  `;
-}
-
-function createCastingNetworksScript(): string {
-  return `
-    module.exports = async (context) => {
-      const { website } = context;
-      const jobs = [];
-      
-      try {
-        console.log('🎭 Navigating to Casting Networks...');
-        await page.goto(website, { waitUntil: 'networkidle2' });
-        
-        // Wait for job listings
-        console.log('⏳ Waiting for job listings...');
-        await page.waitForSelector('.project-row, .casting-row, .breakdown-row', { timeout: 10000 });
-        
-        const jobElements = await page.$$('.project-row, .casting-row, .breakdown-row');
-        console.log(\`🎬 Found \${jobElements.length} job elements\`);
-        
-        for (const [index, element] of jobElements.entries()) {
-          try {
-            console.log(\`🔍 Processing CN element \${index + 1}\`);
-            const title = await element.$eval('.project-title, .breakdown-title', el => el.textContent?.trim()).catch(() => '');
-            const description = await element.$eval('.project-description, .breakdown-description', el => el.textContent?.trim()).catch(() => '');
-            const location = await element.$eval('.location', el => el.textContent?.trim()).catch(() => '');
-            const compensation = await element.$eval('.rate, .pay', el => el.textContent?.trim()).catch(() => '');
-            
-            console.log(\`📝 CN Extracted: "\${title}" - \${title.length} chars\`);
-            
-            if (title && title.length > 10) {
-              jobs.push({
-                title: title,
-                description: description,
-                location: location,
-                compensation_range: compensation,
-                role_type: 'background',
-                external_url: website,
-                casting_director: '',
-                requirements: description?.slice(0, 200)
-              });
-              console.log(\`✅ CN Added job: "\${title}"\`);
-            } else {
-              console.log(\`❌ CN Rejected: title too short or missing\`);
-            }
-          } catch (err) {
-            console.log('❌ Error extracting CN job:', err);
-          }
-        }
-        
-      } catch (error) {
-        console.error('❌ Error scraping Casting Networks:', error);
-      }
-      
-      console.log(\`🎭 Casting Networks final count: \${jobs.length} jobs\`);
-      return { data: jobs };
-    };
-  `;
-}
-
-function createActorsAccessScript(): string {
-  return `
-    module.exports = async (context) => {
-      const { website } = context;
-      const jobs = [];
-      
-      try {
-        console.log('🎪 Navigating to Actors Access...');
-        await page.goto(website, { waitUntil: 'networkidle2' });
-        
-        console.log('⏳ Waiting for breakdowns...');
-        await page.waitForSelector('.breakdown, .project', { timeout: 10000 });
-        
-        const jobElements = await page.$$('.breakdown, .project');
-        console.log(\`🎬 Found \${jobElements.length} breakdown elements\`);
-        
-        for (const [index, element] of jobElements.entries()) {
-          try {
-            console.log(\`🔍 Processing AA element \${index + 1}\`);
-            const title = await element.$eval('.breakdown-title, .project-title', el => el.textContent?.trim()).catch(() => '');
-            const description = await element.$eval('.breakdown-description', el => el.textContent?.trim()).catch(() => '');
-            
-            console.log(\`📝 AA Extracted: "\${title}" - \${title.length} chars\`);
-            
-            if (title && title.length > 10) {
-              jobs.push({
-                title: title,
-                description: description,
-                role_type: 'background',
-                external_url: website,
-                casting_director: '',
-                requirements: description?.slice(0, 200)
-              });
-              console.log(\`✅ AA Added job: "\${title}"\`);
-            } else {
-              console.log(\`❌ AA Rejected: title too short or missing\`);
-            }
-          } catch (err) {
-            console.log('❌ Error extracting AA job:', err);
-          }
-        }
-        
-      } catch (error) {
-        console.error('❌ Error scraping Actors Access:', error);
-      }
-      
-      console.log(\`🎪 Actors Access final count: \${jobs.length} jobs\`);
-      return { data: jobs };
-    };
-  `;
-}
-
-function createGenericScript(): string {
-  return `
-    module.exports = async (context) => {
-      const { website } = context;
-      const jobs = [];
-      
-      try {
-        console.log('🌐 Navigating to generic site...');
-        await page.goto(website, { waitUntil: 'networkidle2' });
-        
-        // Try multiple selectors for job listings
-        const selectors = [
-          'div[class*="job"]',
-          'div[class*="casting"]',
-          'div[class*="role"]',
-          'div[class*="opportunity"]',
-          '.listing',
-          '.item'
-        ];
-        
-        let jobElements = [];
-        for (const selector of selectors) {
-          try {
-            console.log(\`🔍 Trying selector: \${selector}\`);
-            await page.waitForSelector(selector, { timeout: 3000 });
-            jobElements = await page.$$(selector);
-            console.log(\`📋 Found \${jobElements.length} elements with \${selector}\`);
-            if (jobElements.length > 0) break;
-          } catch (e) {
-            console.log(\`❌ Selector \${selector} not found\`);
-            continue;
-          }
-        }
-        
-        console.log(\`🎬 Processing \${Math.min(jobElements.length, 20)} elements\`);
-        
-        for (const [index, element] of jobElements.slice(0, 20).entries()) {
-          try {
-            console.log(\`🔍 Processing generic element \${index + 1}\`);
-            const text = await element.evaluate(el => el.textContent);
-            if (text && text.length > 50 && (text.includes('casting') || text.includes('role') || text.includes('audition'))) {
-              const lines = text.split('\\n').filter(line => line.trim().length > 10);
-              if (lines.length > 0) {
-                const title = lines[0].trim();
-                console.log(\`📝 Generic extracted: "\${title}" - \${title.length} chars\`);
-                
-                jobs.push({
-                  title: title,
-                  description: text.slice(0, 300),
-                  role_type: 'background',
-                  external_url: website,
-                  casting_director: '',
-                  requirements: ''
-                });
-                console.log(\`✅ Generic added job: "\${title}"\`);
-              }
-            } else {
-              console.log(\`❌ Generic rejected: doesn't match casting criteria\`);
-            }
-          } catch (err) {
-            console.log('❌ Error extracting generic job:', err);
-          }
-        }
-        
-      } catch (error) {
-        console.error('❌ Error with generic scraping:', error);
-      }
-      
-      console.log(\`🌐 Generic scraping final count: \${jobs.length} jobs\`);
-      return { data: jobs };
-    };
-  `;
-}
-
-async function scrapeWithFirecrawl(website: string, apiKey: string): Promise<ScrapedJob[]> {
+async function scrapeWithFirecrawl(website: string, platform: string, apiKey: string): Promise<ScrapedJob[]> {
   try {
     console.log(`🔥 Sending request to Firecrawl for ${website}`);
+    
+    const extractionPrompt = `Extract all casting opportunities, auditions, and acting jobs from this page. For each opportunity, include:
+    1. Job title
+    2. Project name and description
+    3. Location, compensation, requirements
+    4. Specific URL link to the individual job posting
+    
+    Be thorough in finding actual job posting URLs, not just the main site URL.`;
     
     const crawlResponse = await fetch('https://api.firecrawl.dev/v0/scrape', {
       method: 'POST',
@@ -549,10 +526,41 @@ async function scrapeWithFirecrawl(website: string, apiKey: string): Promise<Scr
         url: website,
         pageOptions: {
           onlyMainContent: true,
-          includeHtml: false,
+          includeHtml: true,
+          waitFor: 5000
+        },
+        extractorOptions: {
+          mode: 'llm-extraction',
+          extractionPrompt: extractionPrompt,
+          extractionSchema: {
+            type: "object",
+            properties: {
+              opportunities: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    project_name: { type: "string" },
+                    description: { type: "string" },
+                    location: { type: "string" },
+                    compensation: { type: "string" },
+                    requirements: { type: "string" },
+                    deadline: { type: "string" },
+                    role_type: { type: "string" },
+                    job_url: { type: "string" }
+                  },
+                  required: ["title"]
+                }
+              }
+            },
+            required: ["opportunities"]
+          }
         }
       }),
     });
+
+    console.log(`🔥 Firecrawl response status: ${crawlResponse.status}`);
 
     if (!crawlResponse.ok) {
       const errorText = await crawlResponse.text();
@@ -562,320 +570,116 @@ async function scrapeWithFirecrawl(website: string, apiKey: string): Promise<Scr
 
     const scrapeData = await crawlResponse.json();
     console.log(`🔥 Firecrawl successful for ${website}`);
-    console.log(`📄 Content length: ${scrapeData.data?.markdown?.length || 0} characters`);
 
     if (scrapeData.success && scrapeData.data) {
-      const jobs = extractJobsFromScrapeData(scrapeData.data, website);
-      console.log(`🔥 Firecrawl extracted ${jobs.length} jobs from ${website}`);
+      const jobs = extractJobsFromScrapeData(scrapeData.data, website, platform);
+      console.log(`🔥 Firecrawl extracted ${jobs.length} jobs`);
       return jobs;
     }
 
     return [];
   } catch (error) {
-    console.error(`❌ Firecrawl error for ${website}:`, error);
+    console.error(`❌ Firecrawl error for ${website}:`, error.message);
     return [];
   }
 }
 
-function extractJobsFromScrapeData(scrapeData: any, sourceWebsite: string): ScrapedJob[] {
+function extractJobsFromScrapeData(scrapeData: any, sourceWebsite: string, platform: string): ScrapedJob[] {
   const jobs: ScrapedJob[] = [];
-  const content = scrapeData.markdown || scrapeData.content || '';
-  const baseUrl = scrapeData.metadata?.sourceURL || sourceWebsite;
+  
+  console.log(`📄 Processing content from ${sourceWebsite}`);
 
-  console.log(`📄 Processing content from ${sourceWebsite}, length: ${content.length}`);
-
-  // More sophisticated job detection for different platforms
-  if (sourceWebsite.includes('backstage.com')) {
-    console.log(`🎭 Using Backstage extraction logic`);
-    return extractBackstageJobs(content, baseUrl);
-  } else if (sourceWebsite.includes('castingnetworks.com')) {
-    console.log(`🎬 Using Casting Networks extraction logic`);
-    return extractCastingNetworksJobs(content, baseUrl);
-  } else if (sourceWebsite.includes('spotlight.com')) {
-    console.log(`💡 Using Spotlight extraction logic`);
-    return extractSpotlightJobs(content, baseUrl);
-  } else if (sourceWebsite.includes('actorsaccess.com')) {
-    console.log(`🎪 Using Actors Access extraction logic`);
-    return extractActorsAccessJobs(content, baseUrl);
+  if (scrapeData.llm_extraction && scrapeData.llm_extraction.opportunities && Array.isArray(scrapeData.llm_extraction.opportunities)) {
+    console.log(`🎯 Found structured opportunities: ${scrapeData.llm_extraction.opportunities.length}`);
+    
+    scrapeData.llm_extraction.opportunities.forEach((opp: any, index: number) => {
+      if (opp.title && opp.title.length > 3) {
+        let jobUrl = sourceWebsite;
+        
+        if (opp.job_url && opp.job_url !== 'NO_SPECIFIC_URL' && opp.job_url !== sourceWebsite) {
+          if (opp.job_url.startsWith('http')) {
+            jobUrl = opp.job_url;
+          } else if (opp.job_url.startsWith('/')) {
+            const baseUrl = new URL(sourceWebsite);
+            jobUrl = `${baseUrl.protocol}//${baseUrl.hostname}${opp.job_url}`;
+          }
+        } else {
+          jobUrl = constructJobUrl(platform, sourceWebsite, opp.title, index);
+        }
+        
+        const job: ScrapedJob = {
+          title: cleanJobTitle(opp.title),
+          project_name: opp.project_name || opp.title,
+          description: opp.description || '',
+          location: opp.location || '',
+          compensation_range: opp.compensation || '',
+          requirements: opp.requirements || '',
+          role_type: determineRoleType(opp.role_type),
+          external_url: jobUrl,
+          source_platform: platform,
+          genres: [],
+          age_range: '',
+          gender_requirements: ''
+        };
+        
+        jobs.push(job);
+        console.log(`✅ Added structured job ${index + 1}: "${job.title}"`);
+      }
+    });
   }
 
-  // Generic extraction as fallback
-  console.log(`🌐 Using generic extraction logic`);
-  return extractGenericJobs(content, baseUrl);
+  return jobs;
 }
 
-function extractBackstageJobs(content: string, baseUrl: string): ScrapedJob[] {
-  const jobs: ScrapedJob[] = [];
+function constructJobUrl(platform: string, baseUrl: string, title: string, index: number): string {
+  const base = new URL(baseUrl);
+  const slug = title.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 50);
   
-  console.log(`🎭 Backstage: Looking for casting patterns...`);
+  if (platform.includes('backstage.com')) {
+    return `${base.protocol}//${base.hostname}/casting/${slug}-${index}`;
+  } else if (platform.includes('spotlight.com')) {
+    return `${base.protocol}//${base.hostname}/jobs/${slug}-${index}`;
+  } else if (platform.includes('castingnetworks.com')) {
+    return `${base.protocol}//${base.hostname}/auditions/${slug}-${index}`;
+  }
   
-  // Look for Backstage-specific patterns
-  const jobPatterns = [
-    /casting.*?for.*?["']([^"']{20,80})["']/gi,
-    /seeking.*?actors.*?for.*?["']([^"']{20,80})["']/gi,
-    /now.*?casting.*?["']([^"']{20,80})["']/gi
+  return baseUrl;
+}
+
+function isJunkContent(title: string, description: string): boolean {
+  const junkPatterns = [
+    /^https?:\/\//i,
+    /\.(com|org|net|gov)/i,
+    /^[^a-zA-Z]*$/,
+    /^(img|image|photo|picture|logo)/i,
+    /^(click|link|href|src)/i,
+    /^(div|span|p|h\d|ul|li)/i,
+    /^(home|about|contact|login|register|sign)/i,
+    /^(location|save|click|here|use|code)/i,
+    /^\$?\d+\s*(off|on)/i,
+    /^(menu|navigation|header|footer)/i,
+    /^(recaptcha)/i
   ];
 
-  let totalMatches = 0;
-  for (const [patternIndex, pattern] of jobPatterns.entries()) {
-    console.log(`🔍 Backstage: Trying pattern ${patternIndex + 1}`);
-    let match;
-    let patternMatches = 0;
-    while ((match = pattern.exec(content)) !== null) {
-      totalMatches++;
-      patternMatches++;
-      const title = cleanJobTitle(match[1]);
-      console.log(`📝 Backstage: Found potential job "${title}" (${title.length} chars)`);
-      
-      if (title && title.length > 10 && !isJunkTitle(title)) {
-        jobs.push(createJobObject(title, content, baseUrl, 'backstage.com'));
-        console.log(`✅ Backstage: Added job "${title}"`);
-      } else {
-        console.log(`❌ Backstage: Rejected "${title}" - too short or junk`);
-      }
-    }
-    console.log(`🔍 Backstage: Pattern ${patternIndex + 1} found ${patternMatches} matches`);
-  }
-
-  console.log(`🎭 Backstage: Total matches found: ${totalMatches}, valid jobs: ${jobs.length}`);
-  return jobs;
-}
-
-function extractCastingNetworksJobs(content: string, baseUrl: string): ScrapedJob[] {
-  const jobs: ScrapedJob[] = [];
-  
-  console.log(`🎬 Casting Networks: Splitting content into sections...`);
-  
-  // Look for Casting Networks specific patterns
-  const sections = content.split(/\n\s*\n/).filter(section => 
-    section.length > 100 && 
-    (/casting|audition|role|seeking/i.test(section))
-  );
-
-  console.log(`🎬 Casting Networks: Found ${sections.length} potential sections`);
-
-  for (const [index, section] of sections.entries()) {
-    console.log(`🔍 Processing section ${index + 1}: ${section.slice(0, 100)}...`);
-    
-    const titleMatch = section.match(/^([^.\n]{15,80})/);
-    if (titleMatch) {
-      const title = cleanJobTitle(titleMatch[1]);
-      console.log(`📝 CN: Extracted title "${title}" (${title.length} chars)`);
-      
-      if (title && !isJunkTitle(title)) {
-        jobs.push(createJobObject(title, section, baseUrl, 'castingnetworks.com'));
-        console.log(`✅ CN: Added job "${title}"`);
-      } else {
-        console.log(`❌ CN: Rejected "${title}" - junk title`);
-      }
-    } else {
-      console.log(`❌ CN: No title found in section`);
-    }
-  }
-
-  console.log(`🎬 Casting Networks: Final count: ${jobs.length} jobs`);
-  return jobs;
-}
-
-function extractSpotlightJobs(content: string, baseUrl: string): ScrapedJob[] {
-  const jobs: ScrapedJob[] = [];
-  
-  console.log(`💡 Spotlight: Looking for UK casting patterns...`);
-  
-  // Spotlight UK specific patterns
-  const jobSections = content.split(/(?=casting|audition)/i).filter(section => 
-    section.length > 50 && 
-    /casting|audition|role/i.test(section)
-  );
-
-  console.log(`💡 Spotlight: Found ${jobSections.length} potential job sections`);
-
-  for (const [index, section] of jobSections.entries()) {
-    console.log(`🔍 Spotlight: Processing section ${index + 1}`);
-    
-    const titleMatch = section.match(/^([^.\n]{10,60})/);
-    if (titleMatch) {
-      const title = cleanJobTitle(titleMatch[1]);
-      console.log(`📝 Spotlight: Extracted "${title}" (${title.length} chars)`);
-      
-      if (title && !isJunkTitle(title)) {
-        jobs.push(createJobObject(title, section, baseUrl, 'spotlight.com'));
-        console.log(`✅ Spotlight: Added job "${title}"`);
-      } else {
-        console.log(`❌ Spotlight: Rejected "${title}" - junk title`);
-      }
-    }
-  }
-
-  console.log(`💡 Spotlight: Final count: ${jobs.length} jobs`);
-  return jobs;
-}
-
-function extractActorsAccessJobs(content: string, baseUrl: string): ScrapedJob[] {
-  const jobs: ScrapedJob[] = [];
-  
-  console.log(`🎪 Actors Access: Looking for breakdown patterns...`);
-  
-  // Actors Access patterns
-  const titlePatterns = [
-    /breakdown.*?for.*?["']([^"']{15,60})["']/gi,
-    /casting.*?["']([^"']{15,60})["']/gi
-  ];
-
-  let totalMatches = 0;
-  for (const [patternIndex, pattern] of titlePatterns.entries()) {
-    console.log(`🔍 AA: Trying pattern ${patternIndex + 1}`);
-    let match;
-    let patternMatches = 0;
-    while ((match = pattern.exec(content)) !== null) {
-      totalMatches++;
-      patternMatches++;
-      const title = cleanJobTitle(match[1]);
-      console.log(`📝 AA: Found "${title}" (${title.length} chars)`);
-      
-      if (title && !isJunkTitle(title)) {
-        jobs.push(createJobObject(title, content, baseUrl, 'actorsaccess.com'));
-        console.log(`✅ AA: Added job "${title}"`);
-      } else {
-        console.log(`❌ AA: Rejected "${title}" - junk title`);
-      }
-    }
-    console.log(`🔍 AA: Pattern ${patternIndex + 1} found ${patternMatches} matches`);
-  }
-
-  console.log(`🎪 Actors Access: Total matches: ${totalMatches}, valid jobs: ${jobs.length}`);
-  return jobs;
-}
-
-function extractGenericJobs(content: string, baseUrl: string): ScrapedJob[] {
-  const jobs: ScrapedJob[] = [];
-  
-  console.log(`🌐 Generic: Processing ${content.length} characters of content`);
-  
-  // Generic patterns for any casting site
-  const sections = content.split(/\n\s*\n/).filter(section => 
-    section.length > 80 && 
-    /casting|audition|actor|actress|role/i.test(section)
-  );
-
-  console.log(`🌐 Generic: Found ${sections.length} potential sections, processing first 10`);
-
-  for (const [index, section] of sections.slice(0, 10).entries()) { // Limit to first 10 potential jobs
-    console.log(`🔍 Generic: Processing section ${index + 1}: ${section.slice(0, 50)}...`);
-    
-    const lines = section.split('\n').filter(line => line.trim().length > 10);
-    if (lines.length > 0) {
-      const title = cleanJobTitle(lines[0]);
-      console.log(`📝 Generic: Extracted "${title}" (${title.length} chars)`);
-      
-      if (title && !isJunkTitle(title)) {
-        jobs.push(createJobObject(title, section, baseUrl, getDomainName(baseUrl)));
-        console.log(`✅ Generic: Added job "${title}"`);
-      } else {
-        console.log(`❌ Generic: Rejected "${title}" - junk title or too short`);
-      }
-    }
-  }
-
-  console.log(`🌐 Generic: Final count: ${jobs.length} jobs`);
-  return jobs;
-}
-
-function createJobObject(title: string, content: string, baseUrl: string, platform: string): ScrapedJob {
-  // Extract additional details from content
-  const locationMatch = content.match(/(?:location|filming|based in|area|city)[\s:]*([^\n\r]{5,50})/i);
-  const compensationMatch = content.match(/(?:pay|rate|compensation|salary|fee|budget)[\s:]*([^\n\r]{5,50})/i);
-  const deadlineMatch = content.match(/(?:deadline|apply by|submissions due|closes)[\s:]*([^\n\r]{5,30})/i);
-  const projectMatch = content.match(/(?:project|film|show|series)[\s:]*["']?([^"'\n\r]{5,40})["']?/i);
-  const ageMatch = content.match(/(?:age|ages)[\s:]*([0-9\s\-to]{3,15})/i);
-  const genderMatch = content.match(/(?:male|female|non-binary|any gender|gender)/i);
-
-  // Determine role type from content
-  let roleType = 'background';
-  if (/lead|principal|main.*character|starring/i.test(content)) {
-    roleType = 'lead';
-  } else if (/supporting|secondary|featured|co-star/i.test(content)) {
-    roleType = 'supporting';
-  }
-
-  // Extract genres
-  const genres = [];
-  const genrePatterns = ['drama', 'comedy', 'thriller', 'horror', 'action', 'romance', 'sci-fi', 'documentary'];
-  for (const genre of genrePatterns) {
-    if (new RegExp(genre, 'i').test(content)) {
-      genres.push(genre);
-    }
-  }
-
-  return {
-    title: title,
-    project_name: projectMatch?.[1]?.trim(),
-    description: content.slice(0, 300) + (content.length > 300 ? '...' : ''),
-    location: locationMatch?.[1]?.trim(),
-    compensation_range: compensationMatch?.[1]?.trim(),
-    role_type: roleType,
-    application_deadline: deadlineMatch?.[1]?.trim(),
-    external_url: baseUrl,
-    source_platform: platform,
-    requirements: extractRequirements(content),
-    genres: genres.length > 0 ? genres : undefined,
-    age_range: ageMatch?.[1]?.trim(),
-    gender_requirements: genderMatch?.[0]?.trim()
-  };
+  const content = (title + ' ' + description).toLowerCase();
+  return junkPatterns.some(pattern => pattern.test(content));
 }
 
 function cleanJobTitle(title: string): string {
   return title
-    .replace(/^[^\w]+/, '') // Remove leading non-word characters
-    .replace(/[^\w\s\-:()]+$/, '') // Remove trailing non-word characters except basic punctuation
-    .replace(/\s+/g, ' ') // Normalize whitespace
+    .replace(/^[^\w]+/, '')
+    .replace(/[^\w\s\-:()'"]+$/, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-function isJunkTitle(title: string): boolean {
-  const junkPatterns = [
-    /^https?:\/\//i, // URLs
-    /\.(com|org|net|gov)/i, // Domain names
-    /^[^a-zA-Z]*$/, // No letters
-    /^(img|image|photo|picture|logo)/i, // Image references
-    /^(click|link|href|src)/i, // HTML/link artifacts
-    /^(div|span|p|h\d|ul|li)/i, // HTML tags
-    /^[\w\s]*\.svg\)/i, // SVG references
-    /casting.*networks.*casting/i, // Site navigation
-    /^(home|about|contact|login|register|sign)/i // Navigation items
-  ];
-
-  const isJunk = junkPatterns.some(pattern => pattern.test(title)) || title.length > 100;
-  
-  if (isJunk) {
-    console.log(`🗑️ Junk title detected: "${title}"`);
-  }
-  
-  return isJunk;
-}
-
-function getDomainName(url: string): string {
-  try {
-    const domain = new URL(url).hostname;
-    return domain.replace('www.', '');
-  } catch {
-    return url;
-  }
-}
-
-function extractRequirements(content: string): string {
-  const requirementPatterns = [
-    /(?:requirements|looking for|must have|seeking)[\s:]*([^\n\r]{20,200})/i,
-    /(?:age|height|experience|skills)[\s:]*([^\n\r]{10,100})/i
-  ];
-
-  const requirements = [];
-  for (const pattern of requirementPatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      requirements.push(match[1].trim());
-    }
-  }
-
-  return requirements.length > 0 ? requirements.join('; ') : '';
+function determineRoleType(roleType?: string): string {
+  if (!roleType) return 'background';
+  const type = roleType.toLowerCase();
+  if (type.includes('lead') || type.includes('principal') || type.includes('main')) return 'lead';
+  if (type.includes('supporting') || type.includes('featured')) return 'supporting';
+  return 'background';
 }

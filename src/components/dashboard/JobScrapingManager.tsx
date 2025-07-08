@@ -87,169 +87,171 @@ const JobScrapingManager = () => {
   };
 
   return (
-    <Card className="bg-white/5 border-white/10">
-      <CardHeader>
-        <CardTitle className="text-white flex items-center">
-          <Search className="h-5 w-5 mr-2" />
-          AI Job Scraper
-        </CardTitle>
-        <CardDescription className="text-white/70">
-          Automatically search and import acting opportunities from casting websites
-        </CardDescription>
-      </CardHeader>
-      
-      <CardContent className="space-y-6">
-        {/* Website Selection */}
-        <div>
-          <Label className="text-white text-sm font-medium mb-3 block">
-            Select Websites to Scrape
-          </Label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {presetWebsites.map((website) => (
-              <div key={website.url} className="flex items-start space-x-3 p-3 bg-white/5 rounded-lg border border-white/10">
-                <Checkbox
-                  id={website.url}
-                  checked={selectedWebsites.includes(website.url)}
-                  onCheckedChange={() => handleWebsiteToggle(website.url)}
-                  className="mt-1"
-                />
-                <div className="flex-1">
-                  <Label htmlFor={website.url} className="text-white text-sm font-medium cursor-pointer">
-                    {website.name}
-                  </Label>
-                  <p className="text-white/60 text-xs mt-1">{website.description}</p>
-                  <Badge variant="outline" className="text-xs mt-2 border-white/20 text-white/70">
-                    {website.url.replace('https://www.', '')}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Custom Website */}
-        <div>
-          <Label className="text-white text-sm font-medium mb-2 block">
-            Add Custom Website
-          </Label>
-          <div className="flex space-x-2">
-            <Input
-              placeholder="https://example-casting-site.com"
-              value={customWebsite}
-              onChange={(e) => setCustomWebsite(e.target.value)}
-              className="bg-white/5 border-white/20 text-white"
-            />
-            <Button 
-              onClick={addCustomWebsite}
-              variant="outline"
-              size="sm"
-              disabled={!customWebsite}
-            >
-              Add
-            </Button>
-          </div>
-        </div>
-
-        {/* Search Terms */}
-        <div>
-          <Label className="text-white text-sm font-medium mb-2 block">
-            Search Terms (Optional)
-          </Label>
-          <Input
-            placeholder="film, tv series, commercial (comma-separated)"
-            value={searchTerms}
-            onChange={(e) => setSearchTerms(e.target.value)}
-            className="bg-white/5 border-white/20 text-white"
-          />
-          <p className="text-white/50 text-xs mt-1">
-            Leave empty to scrape all available opportunities
-          </p>
-        </div>
-
-        {/* Selected Websites Display */}
-        {selectedWebsites.length > 0 && (
+    <div className="space-y-6">
+      <Card className="bg-white/5 border-white/10">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center">
+            <Search className="h-5 w-5 mr-2" />
+            AI Job Scraper (Firecrawl)
+          </CardTitle>
+          <CardDescription className="text-white/70">
+            Automatically search and import acting opportunities using AI extraction
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent className="space-y-6">
+          {/* Website Selection */}
           <div>
-            <Label className="text-white text-sm font-medium mb-2 block">
-              Selected Websites ({selectedWebsites.length})
+            <Label className="text-white text-sm font-medium mb-3 block">
+              Select Websites to Scrape
             </Label>
-            <div className="flex flex-wrap gap-2">
-              {selectedWebsites.map((url) => (
-                <Badge 
-                  key={url} 
-                  variant="secondary" 
-                  className="bg-purple-500/20 text-purple-300 border-purple-500/30"
-                >
-                  <Globe className="h-3 w-3 mr-1" />
-                  {new URL(url).hostname.replace('www.', '')}
-                  <button
-                    onClick={() => setSelectedWebsites(prev => prev.filter(u => u !== url))}
-                    className="ml-2 text-purple-200 hover:text-white"
-                  >
-                    ×
-                  </button>
-                </Badge>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {presetWebsites.map((website) => (
+                <div key={website.url} className="flex items-start space-x-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                  <Checkbox
+                    id={website.url}
+                    checked={selectedWebsites.includes(website.url)}
+                    onCheckedChange={() => handleWebsiteToggle(website.url)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor={website.url} className="text-white text-sm font-medium cursor-pointer">
+                      {website.name}
+                    </Label>
+                    <p className="text-white/60 text-xs mt-1">{website.description}</p>
+                    <Badge variant="outline" className="text-xs mt-2 border-white/20 text-white/70">
+                      {website.url.replace('https://www.', '')}
+                    </Badge>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        )}
 
-        {/* Progress */}
-        {isScrapingInProgress && (
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2 text-white">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Scraping websites...</span>
+          {/* Custom Website */}
+          <div>
+            <Label className="text-white text-sm font-medium mb-2 block">
+              Add Custom Website
+            </Label>
+            <div className="flex space-x-2">
+              <Input
+                placeholder="https://example-casting-site.com"
+                value={customWebsite}
+                onChange={(e) => setCustomWebsite(e.target.value)}
+                className="bg-white/5 border-white/20 text-white"
+              />
+              <Button 
+                onClick={addCustomWebsite}
+                variant="outline"
+                size="sm"
+                disabled={!customWebsite}
+              >
+                Add
+              </Button>
             </div>
-            <Progress value={33} className="w-full" />
-            <p className="text-white/60 text-xs">
-              This may take several minutes depending on the number of websites
+          </div>
+
+          {/* Search Terms */}
+          <div>
+            <Label className="text-white text-sm font-medium mb-2 block">
+              Search Terms (Optional)
+            </Label>
+            <Input
+              placeholder="film, tv series, commercial (comma-separated)"
+              value={searchTerms}
+              onChange={(e) => setSearchTerms(e.target.value)}
+              className="bg-white/5 border-white/20 text-white"
+            />
+            <p className="text-white/50 text-xs mt-1">
+              Leave empty to scrape all available opportunities
             </p>
           </div>
-        )}
 
-        {/* Last Result */}
-        {lastResult && !isScrapingInProgress && (
-          <div className="p-4 bg-white/5 rounded-lg border border-white/10">
-            <h4 className="text-white font-medium mb-2">Last Scraping Result</h4>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold text-green-400">{lastResult.totalFound}</div>
-                <div className="text-white/60 text-xs">Jobs Found</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-blue-400">{lastResult.newJobs}</div>
-                <div className="text-white/60 text-xs">New Jobs</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-yellow-400">{lastResult.duplicates}</div>
-                <div className="text-white/60 text-xs">Duplicates</div>
+          {/* Selected Websites Display */}
+          {selectedWebsites.length > 0 && (
+            <div>
+              <Label className="text-white text-sm font-medium mb-2 block">
+                Selected Websites ({selectedWebsites.length})
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {selectedWebsites.map((url) => (
+                  <Badge 
+                    key={url} 
+                    variant="secondary" 
+                    className="bg-purple-500/20 text-purple-300 border-purple-500/30"
+                  >
+                    <Globe className="h-3 w-3 mr-1" />
+                    {new URL(url).hostname.replace('www.', '')}
+                    <button
+                      onClick={() => setSelectedWebsites(prev => prev.filter(u => u !== url))}
+                      className="ml-2 text-purple-200 hover:text-white"
+                    >
+                      ×
+                    </button>
+                  </Badge>
+                ))}
               </div>
             </div>
-            <p className="text-white/70 text-sm mt-3">{lastResult.message}</p>
-          </div>
-        )}
-
-        {/* Start Scraping Button */}
-        <Button 
-          onClick={startScraping}
-          disabled={selectedWebsites.length === 0 || isScrapingInProgress}
-          className="w-full bg-purple-600 hover:bg-purple-700"
-          size="lg"
-        >
-          {isScrapingInProgress ? (
-            <>
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              Scraping in Progress...
-            </>
-          ) : (
-            <>
-              <Search className="h-4 w-4 mr-2" />
-              Start Scraping ({selectedWebsites.length} websites)
-            </>
           )}
-        </Button>
-      </CardContent>
-    </Card>
+
+          {/* Progress */}
+          {isScrapingInProgress && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2 text-white">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Scraping websites with AI...</span>
+              </div>
+              <Progress value={33} className="w-full" />
+              <p className="text-white/60 text-xs">
+                This may take several minutes depending on the number of websites
+              </p>
+            </div>
+          )}
+
+          {/* Last Result */}
+          {lastResult && !isScrapingInProgress && (
+            <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+              <h4 className="text-white font-medium mb-2">Last Firecrawl Result</h4>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-bold text-green-400">{lastResult.totalFound}</div>
+                  <div className="text-white/60 text-xs">Jobs Found</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-blue-400">{lastResult.newJobs}</div>
+                  <div className="text-white/60 text-xs">New Jobs</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-yellow-400">{lastResult.duplicates}</div>
+                  <div className="text-white/60 text-xs">Duplicates</div>
+                </div>
+              </div>
+              <p className="text-white/70 text-sm mt-3">{lastResult.message}</p>
+            </div>
+          )}
+
+          {/* Start Scraping Button */}
+          <Button 
+            onClick={startScraping}
+            disabled={selectedWebsites.length === 0 || isScrapingInProgress}
+            className="w-full bg-blue-600 hover:bg-blue-700"
+            size="lg"
+          >
+            {isScrapingInProgress ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                AI Scraping in Progress...
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4 mr-2" />
+                Start AI Scraping ({selectedWebsites.length} websites)
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

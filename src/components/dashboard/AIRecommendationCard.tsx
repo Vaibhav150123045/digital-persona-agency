@@ -3,7 +3,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Bot, Star, Clock, MapPin, DollarSign } from "lucide-react";
+import { Bot, Star, Clock, MapPin, DollarSign, ExternalLink } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import type { OpportunityMatch } from "@/services/autoSubmissionService";
 
 interface AIRecommendationCardProps {
@@ -11,6 +12,20 @@ interface AIRecommendationCardProps {
 }
 
 const AIRecommendationCard = ({ match }: AIRecommendationCardProps) => {
+  const { toast } = useToast();
+
+  const handleViewDetails = () => {
+    if (match.opportunity.external_url) {
+      window.open(match.opportunity.external_url, '_blank', 'noopener,noreferrer');
+    } else {
+      toast({
+        title: "No Link Available",
+        description: "This opportunity doesn't have an external link available",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <Card className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors">
       <CardHeader>
@@ -88,6 +103,12 @@ const AIRecommendationCard = ({ match }: AIRecommendationCardProps) => {
             ))}
           </div>
         )}
+
+        {match.opportunity.source_platform && (
+          <div className="flex items-center gap-1 text-xs text-white/50">
+            <span>Source: {match.opportunity.source_platform}</span>
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="flex justify-between">
@@ -95,7 +116,13 @@ const AIRecommendationCard = ({ match }: AIRecommendationCardProps) => {
           Posted {new Date(match.opportunity.created_at).toLocaleDateString()}
         </div>
         <div className="flex space-x-2">
-          <Button variant="outline" size="sm">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleViewDetails}
+            className="border-white/20 text-white/70 hover:bg-white/10"
+          >
+            <ExternalLink className="h-4 w-4 mr-1" />
             View Details
           </Button>
           {!match.eligible_for_auto_submit && (

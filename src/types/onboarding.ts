@@ -1,18 +1,15 @@
-export interface ChatHistory {
-  user_email: string;
-  chat_history: Message[];
-}
 
 export interface Message {
   id: number;
   content: string;
-  sender: "user" | "ai" | "onboard bot";
+  sender: "user" | "ai";
   timestamp: Date;
 }
 
 export interface OnboardingData {
   name: string;
   email: string;
+  location: string;
   actorType: string;
   favoriteGenres: string[];
   picture: File | null;

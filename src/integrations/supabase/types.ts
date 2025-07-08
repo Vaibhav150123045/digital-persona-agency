@@ -195,6 +195,45 @@ export type Database = {
           },
         ]
       }
+      agent_configurations: {
+        Row: {
+          aggressiveness_level: string
+          auto_apply_enabled: boolean
+          created_at: string
+          custom_instructions: string | null
+          id: string
+          max_applications_per_day: number
+          minimum_confidence_score: number
+          preferred_opportunity_types: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aggressiveness_level?: string
+          auto_apply_enabled?: boolean
+          created_at?: string
+          custom_instructions?: string | null
+          id?: string
+          max_applications_per_day?: number
+          minimum_confidence_score?: number
+          preferred_opportunity_types?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aggressiveness_level?: string
+          auto_apply_enabled?: boolean
+          created_at?: string
+          custom_instructions?: string | null
+          id?: string
+          max_applications_per_day?: number
+          minimum_confidence_score?: number
+          preferred_opportunity_types?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       casting_opportunities: {
         Row: {
           age_range: string | null
@@ -270,6 +309,27 @@ export type Database = {
           status?: Database["public"]["Enums"]["opportunity_status"]
           title?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      chat_histories: {
+        Row: {
+          chat_history: Json
+          id: number
+          updated_at: string | null
+          user_email: string
+        }
+        Insert: {
+          chat_history?: Json
+          id?: number
+          updated_at?: string | null
+          user_email: string
+        }
+        Update: {
+          chat_history?: Json
+          id?: number
+          updated_at?: string | null
+          user_email?: string
         }
         Relationships: []
       }
@@ -404,6 +464,89 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_chat_limits: {
+        Row: {
+          chat_limit_reached: boolean | null
+          email: string
+          messages_per_day: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          chat_limit_reached?: boolean | null
+          email: string
+          messages_per_day?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          chat_limit_reached?: boolean | null
+          email?: string
+          messages_per_day?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      daily_chat_usage: {
+        Row: {
+          created_at: string
+          date: string
+          email: string
+          id: string
+          messages_used: number
+          tokens_used: number
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          date?: string
+          email: string
+          id?: string
+          messages_used?: number
+          tokens_used?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          email?: string
+          id?: string
+          messages_used?: number
+          tokens_used?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      dismissed_opportunities: {
+        Row: {
+          dismissed_at: string
+          id: string
+          opportunity_id: string
+          user_id: string
+        }
+        Insert: {
+          dismissed_at?: string
+          id?: string
+          opportunity_id: string
+          user_id: string
+        }
+        Update: {
+          dismissed_at?: string
+          id?: string
+          opportunity_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dismissed_opportunities_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "casting_opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       onboarding_sessions: {
         Row: {
           actor_type: string | null
@@ -412,7 +555,9 @@ export type Database = {
           expires_at: string
           favorite_genres: string[] | null
           id: string
+          location: string | null
           name: string
+          picture_base64: string | null
           session_id: string
         }
         Insert: {
@@ -422,7 +567,9 @@ export type Database = {
           expires_at?: string
           favorite_genres?: string[] | null
           id?: string
+          location?: string | null
           name: string
+          picture_base64?: string | null
           session_id: string
         }
         Update: {
@@ -432,10 +579,50 @@ export type Database = {
           expires_at?: string
           favorite_genres?: string[] | null
           id?: string
+          location?: string | null
           name?: string
+          picture_base64?: string | null
           session_id?: string
         }
         Relationships: []
+      }
+      opportunity_intelligence: {
+        Row: {
+          ai_analysis: Json | null
+          confidence_score: number
+          created_at: string
+          id: string
+          opportunity_id: string
+          processing_notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          ai_analysis?: Json | null
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          opportunity_id: string
+          processing_notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ai_analysis?: Json | null
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          opportunity_id?: string
+          processing_notes?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_intelligence_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "casting_opportunities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -655,38 +842,6 @@ export type Database = {
         }
         Relationships: []
       }
-      chat_histories: {
-        Row: {
-          user_email: string
-          chat_history: {
-            id: number;
-            content: string;
-            sender: "user" | "ai";
-            timestamp: Date;
-          }[]
-          updated_at: string
-        }
-        Insert: {
-          user_email: string
-          chat_history: {
-            id: number;
-            content: string;
-            sender: "user" | "ai";
-            timestamp: Date;
-          }[]
-          updated_at?: string
-        }
-        Update: {
-          chat_history: {
-            id: number;
-            content: string;
-            sender: "user" | "ai";
-            timestamp: Date;
-          }[]
-          updated_at?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
@@ -714,6 +869,10 @@ export type Database = {
       is_course_provider: {
         Args: { _user_id: string }
         Returns: boolean
+      }
+      reset_daily_chat_usage: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
     }
     Enums: {

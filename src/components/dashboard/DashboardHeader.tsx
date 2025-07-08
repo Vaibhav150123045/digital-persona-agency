@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -28,6 +29,7 @@ interface DisplayProfile {
   activeAuditions: number;
   completedProjects: number;
   isNewUser: boolean;
+  profilePicture?: File | null | string;
 }
 
 interface DashboardHeaderProps {
@@ -62,6 +64,13 @@ const DashboardHeader = ({
 
   const unreadNotifications = notifications.filter(notification => !notification.read).length;
 
+  // Handle profile picture URL - could be base64 string or File object
+  const profilePictureUrl = displayProfile.profilePicture 
+    ? (typeof displayProfile.profilePicture === 'string' 
+        ? displayProfile.profilePicture // base64 string
+        : URL.createObjectURL(displayProfile.profilePicture)) // File object
+    : null;
+
   return (
     <header className="bg-slate-900/50 backdrop-blur-sm border-b border-gray-800/50">
       <div className="max-w-7xl mx-auto px-6">
@@ -82,10 +91,10 @@ const DashboardHeader = ({
             {/* Notifications Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative">
+                <Button variant="ghost" className="relative hover:bg-slate-700/50 text-slate-300 hover:text-white transition-colors">
                   <Bell className="h-5 w-5" />
                   {unreadNotifications > 0 && (
-                    <div className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></div>
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-spais-purple-500 rounded-full border-2 border-slate-900 shadow-lg"></div>
                   )}
                 </Button>
               </DropdownMenuTrigger>
@@ -111,8 +120,12 @@ const DashboardHeader = ({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="h-8 w-8 p-0 data-[state=open]:bg-muted">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="https://github.com/shadcn.png" alt={displayProfile.name} />
-                    <AvatarFallback>{displayProfile.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    {profilePictureUrl ? (
+                      <AvatarImage src={profilePictureUrl} alt={displayProfile.name} />
+                    ) : null}
+                    <AvatarFallback className="bg-gradient-to-br from-blue-400 to-purple-600 text-white">
+                      <User className="h-4 w-4" />
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>

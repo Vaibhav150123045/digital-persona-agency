@@ -30,7 +30,7 @@ export const castingApiService = {
       {
         name: "Spotlight",
         enabled: false,
-        baseUrl: "https://api.spotlight.com/v1",
+        baseUrl: "https://app.spotlight.com/jobs/all-opportunities",
         requiresAuth: true,
         supportedFeatures: {
           listings: true,
