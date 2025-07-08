@@ -106,7 +106,7 @@ const DashboardTabs = ({
         {isFeatureLocked ? (
           <FeatureLockedCard onUnlock={onShowLockedFeature} />
         ) : (
-          <EnhancedOpportunitiesTab />
+          <EnhancedOpportunitiesTab userProfile={displayProfile}/>
         )}
       </TabsContent>
 

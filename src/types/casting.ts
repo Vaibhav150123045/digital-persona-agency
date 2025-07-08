@@ -29,6 +29,7 @@ export interface CastingOpportunity {
   status: OpportunityStatus;
   created_at: string;
   updated_at: string;
+  similarity?: number;
 }
 
 export interface RoleSubmission {

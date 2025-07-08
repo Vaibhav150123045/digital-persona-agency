@@ -7,7 +7,7 @@ import { useOpportunityFilters } from "@/hooks/useOpportunityFilters";
 import OpportunitiesHeader from "./OpportunitiesHeader";
 import OpportunitiesList from "./OpportunitiesList";
 
-const OpportunitiesTab = () => {
+const OpportunitiesTab = ({ userProfile }: any) => {
   const {
     opportunities,
     setOpportunities,
@@ -17,7 +17,7 @@ const OpportunitiesTab = () => {
     handleClearAllOpportunities
   } = useOpportunities();
 
-  const { filteredOpportunities } = useOpportunityFilters(opportunities);
+  const { filteredOpportunities } = useOpportunityFilters(opportunities, userProfile);
   const { dialogOpportunity, isDialogOpen, closeDialog } = useApplicationStatusDialog();
 
   const handleApplicationStatusUpdate = (opportunityId: string, applied: boolean) => {

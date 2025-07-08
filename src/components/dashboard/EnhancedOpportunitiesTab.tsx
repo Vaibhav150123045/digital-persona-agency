@@ -5,7 +5,7 @@ import { Briefcase, Trello } from "lucide-react";
 import OpportunitiesTab from "./OpportunitiesTab";
 import KanbanBoard from "./KanbanBoard";
 
-const EnhancedOpportunitiesTab = () => {
+const EnhancedOpportunitiesTab = ({ userProfile }: any) => {
   const [activeSubTab, setActiveSubTab] = useState("opportunities");
 
   return (
@@ -23,7 +23,7 @@ const EnhancedOpportunitiesTab = () => {
         </TabsList>
 
         <TabsContent value="opportunities" className="space-y-6">
-          <OpportunitiesTab />
+          <OpportunitiesTab userProfile={userProfile}/>
         </TabsContent>
 
         <TabsContent value="pipeline" className="space-y-6">
